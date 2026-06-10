@@ -1,24 +1,16 @@
-import { defineConfig } from 'vite'
-import { resolve } from 'path'
+import { defineConfig } from 'vite-plus'
 
 export default defineConfig({
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/cli.ts'),
+      entry: './src/cli.ts',
       formats: ['es'],
       fileName: () => 'cli.js',
     },
     target: 'node24',
-    outDir: 'dist',
     sourcemap: true,
     rollupOptions: {
-      external: [
-        /^node:/,
-        /^@opentui\//,
-        'gray-matter',
-        'commander',
-        'js-yaml',
-      ],
+      external: (id) => !id.startsWith('.') && !id.startsWith('/'),
       output: {
         banner: '#!/usr/bin/env node',
       },

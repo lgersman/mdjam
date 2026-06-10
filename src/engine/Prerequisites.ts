@@ -2,7 +2,6 @@ import { execSync } from 'node:child_process'
 import type { Prerequisites } from '../parser/frontmatter.js'
 
 export interface PrerequisiteResult {
-  passed: string[]
   failed: string[]
 }
 
@@ -15,25 +14,16 @@ function toolExists(name: string): boolean {
   }
 }
 
-export async function checkPrerequisites(prereqs: Prerequisites): Promise<PrerequisiteResult> {
-  const passed: string[] = []
+export function checkPrerequisites(prereqs: Prerequisites): PrerequisiteResult {
   const failed: string[] = []
 
   for (const tool of prereqs.tools ?? []) {
-    if (toolExists(tool)) {
-      passed.push(`tool:${tool}`)
-    } else {
-      failed.push(`tool '${tool}' not found in PATH`)
-    }
+    if (!toolExists(tool)) failed.push(`tool '${tool}' not found in PATH`)
   }
 
   for (const envVar of prereqs.env ?? []) {
-    if (process.env[envVar] !== undefined) {
-      passed.push(`env:${envVar}`)
-    } else {
-      failed.push(`env var $${envVar} is not set`)
-    }
+    if (process.env[envVar] === undefined) failed.push(`env var $${envVar} is not set`)
   }
 
-  return { passed, failed }
+  return { failed }
 }

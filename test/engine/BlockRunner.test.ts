@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vite-plus/test'
 import { BlockRunner } from '../../src/engine/BlockRunner.js'
 import { StateStore } from '../../src/engine/StateStore.js'
 

@@ -55,9 +55,6 @@ export class BlockRunner extends EventEmitter {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
-    let stdoutBuf = ''
-    let stderrBuf = ''
-
     const processOutputLine = (line: string, isStderr: boolean): void => {
       if (!isStderr) {
         const m = line.match(SET_OUTPUT_RE)
@@ -83,8 +80,6 @@ export class BlockRunner extends EventEmitter {
       })
       stream.on('end', () => {
         if (buf.length > 0) processOutputLine(buf, isStderr)
-        if (isStderr) stderrBuf = ''
-        else stdoutBuf = ''
       })
     }
 

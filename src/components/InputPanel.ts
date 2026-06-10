@@ -32,16 +32,5 @@ export class InputPanel extends BoxRenderable {
     return this.rows.filter(r => !r.hasValue()).map(r => r.name)
   }
 
-  /** Returns the current values as key→value map. */
-  inputValues(): Record<string, string> {
-    const result: Record<string, string> = {}
-    for (const row of this.rows) {
-      result[row.name] = row.currentValue
-    }
-    return result
-  }
 
-  get focusableInputs(): InputRow[] {
-    return this.rows.filter(r => !r.getChildren().every((c: any) => c._focusable === false))
-  }
 }

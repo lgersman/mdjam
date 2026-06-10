@@ -117,7 +117,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     }
 
     // Check prerequisites
-    const prereqResult = await checkPrerequisites(frontmatter.prerequisites ?? {})
+    const prereqResult = checkPrerequisites(frontmatter.prerequisites ?? {})
     let executionBlocked = prereqResult.failed.length > 0
 
     if (executionBlocked) {

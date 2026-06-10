@@ -13,7 +13,6 @@ program
   .argument('<file>', 'Markdown file to open')
   .option('--no-auto', 'Suppress auto-execution of auto:true blocks')
   .option('--no-watch', 'Disable watch mode (default: watch enabled)')
-  .option('--watch', 'Reload document on file change (default)')
   .option(
     '--theme <name>',
     'Syntax theme: github-dark | github-light | dracula',
@@ -24,7 +23,7 @@ program
     watch: boolean
     theme: string
   }) => {
-    const filePath = resolve(process.cwd(), file)
+    const filePath = resolve(file)
 
     if (!existsSync(filePath)) {
       console.error(`Error: File not found: ${filePath}`)

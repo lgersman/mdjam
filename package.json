@@ -7,11 +7,13 @@
     "mdrun": "./dist/cli.js"
   },
   "scripts": {
-    "dev": "vite build --watch",
-    "build": "vite build",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "start": "node --enable-source-maps dist/cli.js"
+    "dev": "vp build --watch",
+    "build": "vp build",
+    "test": "vp test run",
+    "test:watch": "vp test watch"
+  },
+  "engines": {
+    "node": "24.16.0"
   },
   "dependencies": {
     "@opentui/core": "^0.4.0",
@@ -22,8 +24,6 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.0.0",
-    "typescript": "^5.5.0",
-    "vite": "^6.0.0",
-    "vitest": "^2.0.0"
+    "vite-plus": "^0.1.24"
   }
 }

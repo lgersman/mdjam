@@ -7,13 +7,14 @@
     "mdrun": "./dist/cli.js"
   },
   "scripts": {
-    "dev": "vp build --watch",
-    "build": "vp build",
-    "test": "vp test run",
-    "test:watch": "vp test watch"
+    "dev": "bun build src/cli.ts --outfile dist/cli.js --target bun --external '*' --sourcemap --watch",
+    "build": "bun build src/cli.ts --outfile dist/cli.js --target bun --external '*' --sourcemap",
+    "start": "bun dist/cli.js",
+    "test": "bun test",
+    "test:watch": "bun test --watch"
   },
   "engines": {
-    "node": "24.16.0"
+    "bun": ">=1.0.0"
   },
   "dependencies": {
     "@opentui/core": "^0.4.0",
@@ -22,8 +23,7 @@
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^24.0.0",
-    "vite-plus": "^0.1.24"
+    "@types/node": "^24.0.0"
   },
-  "packageManager": "npm@11.16.0"
+  "packageManager": "bun@1.x"
 }

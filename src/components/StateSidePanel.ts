@@ -1,0 +1,81 @@
+import { BoxRenderable, TextRenderable, type RenderContext } from '@opentui/core'
+import type { StateStore } from '../engine/StateStore.js'
+
+export class StateSidePanel extends BoxRenderable {
+  private contentBox: BoxRenderable
+  private stateStore: StateStore
+  private readonly renderCtx: RenderContext
+
+  constructor(ctx: RenderContext, stateStore: StateStore) {
+    super(ctx, {
+      position: 'absolute',
+      right: 0,
+      top: 0,
+      width: 60,
+      height: '100%',
+      flexDirection: 'column',
+      border: true,
+      borderColor: '#30363d',
+      backgroundColor: '#0d1117',
+      zIndex: 100,
+      visible: false,
+    })
+
+    this.stateStore = stateStore
+    this.renderCtx = ctx
+
+    this.add(new TextRenderable(ctx, {
+      content: ' State Store  [s] to close',
+      fg: '#c9d1d9',
+      bold: true,
+      flexShrink: 0,
+      paddingBottom: 1,
+    } as any))
+
+    this.contentBox = new BoxRenderable(ctx, {
+      flexDirection: 'column',
+      flexGrow: 1,
+    })
+    this.add(this.contentBox)
+
+    stateStore.on('change', () => this.refresh())
+    stateStore.on('reset', () => this.refresh())
+  }
+
+  setStore(store: StateStore): void {
+    this.stateStore = store
+    store.on('change', () => { if (this.visible) this.refresh() })
+    store.on('reset', () => { if (this.visible) this.refresh() })
+    if (this.visible) this.refresh()
+  }
+
+  toggle(): void {
+    this.visible = !this.visible
+    if (this.visible) this.refresh()
+  }
+
+  private refresh(): void {
+    // Remove old content children
+    for (const child of this.contentBox.getChildren()) {
+      this.contentBox.remove(child.id)
+    }
+
+    if (this.stateStore.size() === 0) {
+      this.contentBox.add(new TextRenderable(this.renderCtx, {
+        content: '  (empty)',
+        fg: '#6e7781',
+      }))
+      return
+    }
+
+    for (const [key, entry] of this.stateStore.entries()) {
+      const source = entry.sourceBlock === null ? 'setup' : `block:${entry.sourceBlock}`
+      const row = new TextRenderable(this.renderCtx, {
+        content: `  ${key} = ${entry.value}  [${source}]`,
+        fg: '#a5d6ff',
+        flexShrink: 0,
+      })
+      this.contentBox.add(row)
+    }
+  }
+}

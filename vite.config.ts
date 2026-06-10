@@ -1,6 +1,14 @@
 import { defineConfig } from 'vite-plus'
 
 export default defineConfig({
+  run: {
+    tasks: {
+      start: {
+        command: 'bun dist/cli.js',
+        dependsOn: ['build'],
+      },
+    },
+  },
   build: {
     lib: {
       entry: './src/cli.ts',
@@ -12,7 +20,7 @@ export default defineConfig({
     rollupOptions: {
       external: (id) => !id.startsWith('.') && !id.startsWith('/'),
       output: {
-        banner: '#!/usr/bin/env node',
+        banner: '#!/usr/bin/env bun',
       },
     },
   },

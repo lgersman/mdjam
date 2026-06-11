@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "bun build src/cli.ts --outfile dist/cli.js --target bun --external '*' --sourcemap --watch",
     "build": "bun build src/cli.ts --outfile dist/cli.js --target bun --external '*' --sourcemap",
-    "start": "bun dist/cli.js",
+    "start": "bun src/cli.ts",
     "test": "bun test",
     "test:watch": "bun test --watch"
   },
@@ -19,7 +19,8 @@
   "dependencies": {
     "@opentui/core": "^0.4.0",
     "gray-matter": "^4.0.3",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "tree-sitter-bash": "^0.25.1"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

@@ -2,6 +2,7 @@
 import { parseArgs } from 'node:util'
 import { resolve } from 'node:path'
 import { existsSync } from 'node:fs'
+import './setup-parsers.js'
 import { runApp } from './app.js'
 import type { ThemeName } from './theme/themes.js'
 

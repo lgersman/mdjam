@@ -128,12 +128,13 @@ echo "::set-output name=MY_KEY::my_value"
 
 ```bash
 export MY_KEY=my_value
+echo "MY_KEY is: $MY_KEY"
 ```
 
 Downstream blocks receive every state store value as `MDFENCE_<KEY>` environment variables:
 
 ```bash
-echo "Token is: $MDFENCE_TOKEN"
+echo "MY_KEY is: $MY_KEY"
 ```
 
 Values written by a block with `id: my-block` are stored under both the bare key (`TOKEN`) and the namespaced key (`my-block.TOKEN`). Values written by `setup` use bare keys only.

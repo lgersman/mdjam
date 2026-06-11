@@ -5,6 +5,7 @@
 import { parseArgs } from "util";
 import { resolve } from "path";
 import { existsSync } from "fs";
+import"./setup-parsers.js";
 import { runApp } from "./app.js";
 var HELP = `Usage: mdrun <file> [options]
 
@@ -69,5 +70,5 @@ await runApp({
   noWatch: !values.watch
 });
 
-//# debugId=9ECBDCEF2C53723364756E2164756E21
+//# debugId=05AC39F39CCB236564756E2164756E21
 //# sourceMappingURL=cli.js.map

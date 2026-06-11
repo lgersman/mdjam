@@ -2,6 +2,7 @@ import {
   createCliRenderer,
   MarkdownRenderable,
   BoxRenderable,
+  CodeRenderable,
   ScrollBoxRenderable,
   TextRenderable,
   createMarkdownCodeBlockRenderer,
@@ -9,6 +10,7 @@ import {
 } from '@opentui/core'
 import type { Tokens } from 'marked'
 import { readFileSync, watch } from 'node:fs'
+import yaml from 'js-yaml'
 import { parseFrontmatter } from './parser/frontmatter.js'
 import { parseFenceMetadata, extractFenceNodes } from './parser/metadata.js'
 import { buildDependencyGraph } from './parser/dependency.js'
@@ -29,6 +31,7 @@ export interface AppOptions {
   theme: ThemeName
   noAuto: boolean
   noWatch: boolean
+  verbose: boolean
 }
 
 export async function runApp(options: AppOptions): Promise<void> {
@@ -114,6 +117,38 @@ export async function runApp(options: AppOptions): Promise<void> {
 
     for (const [key, value] of Object.entries(frontmatter.defaults ?? {})) {
       currentStateStore.set(key, value, null)
+    }
+
+    // Verbose: render frontmatter header
+    if (options.verbose) {
+      const fields = Object.fromEntries(
+        Object.entries(frontmatter).filter(([, v]) => v !== undefined)
+      )
+      if (Object.keys(fields).length > 0) {
+        const headerBox = new BoxRenderable(renderer, {
+          flexDirection: 'column',
+          flexShrink: 0,
+          marginBottom: 1,
+          border: true,
+          borderColor: '#30363d',
+        })
+        headerBox.add(new TextRenderable(renderer, {
+          content: '  Frontmatter',
+          fg: '#8b949e',
+          italic: true,
+          flexShrink: 0,
+        } as any))
+        headerBox.add(new CodeRenderable(renderer, {
+          content: yaml.dump(fields, { indent: 2, lineWidth: -1 }).trimEnd(),
+          filetype: 'yaml',
+          syntaxStyle,
+          conceal: false,
+          flexShrink: 0,
+          paddingLeft: 2,
+          paddingBottom: 1,
+        }))
+        scrollBox.content.add(headerBox)
+      }
     }
 
     // Check prerequisites

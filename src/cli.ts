@@ -18,6 +18,7 @@ Options:
   --no-auto          Suppress auto-execution of auto:true blocks
   --no-watch         Disable watch mode (default: enabled)
   --theme <name>     Syntax theme: github-dark | github-light | dracula  (default: github-dark)
+  --verbose          Show document frontmatter as a header
   --version          Show version
   --help             Show this help
 `
@@ -34,6 +35,7 @@ const { values, positionals } = parseArgs({
     auto:    { type: 'boolean', default: true },
     watch:   { type: 'boolean', default: true },
     theme:   { type: 'string',  default: 'github-dark' },
+    verbose: { type: 'boolean', default: false },
     version: { type: 'boolean', default: false },
     help:    { type: 'boolean', default: false },
   },
@@ -73,4 +75,5 @@ await runApp({
   theme,
   noAuto: !values.auto,
   noWatch: !values.watch,
+  verbose: values.verbose ?? false,
 })

@@ -18,6 +18,7 @@ Options:
   --no-auto          Suppress auto-execution of auto:true blocks
   --no-watch         Disable watch mode (default: enabled)
   --theme <name>     Syntax theme: github-dark | github-light | dracula  (default: github-dark)
+  --verbose          Show document frontmatter as a header
   --version          Show version
   --help             Show this help
 `;
@@ -32,6 +33,7 @@ var { values, positionals } = parseArgs({
     auto: { type: "boolean", default: true },
     watch: { type: "boolean", default: true },
     theme: { type: "string", default: "github-dark" },
+    verbose: { type: "boolean", default: false },
     version: { type: "boolean", default: false },
     help: { type: "boolean", default: false }
   }
@@ -67,8 +69,9 @@ await runApp({
   filePath,
   theme,
   noAuto: !values.auto,
-  noWatch: !values.watch
+  noWatch: !values.watch,
+  verbose: values.verbose ?? false
 });
 
-//# debugId=05AC39F39CCB236564756E2164756E21
+//# debugId=E880DE43981942FB64756E2164756E21
 //# sourceMappingURL=cli.js.map

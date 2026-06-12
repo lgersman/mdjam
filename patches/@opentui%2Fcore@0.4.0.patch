@@ -1,0 +1,113 @@
+diff --git a/index.js b/index.js
+index 972407d4b06edfdb94fd583a04327b9aa738a43e..a2c80f00b21b0de85370bbdb5e868a6e8cbcbda8 100644
+--- a/index.js
++++ b/index.js
+@@ -6772,6 +6772,7 @@ var MEASURE_HEIGHT = 1e4;
+ 
+ class TextTableRenderable extends Renderable {
+   _content;
++  _columnAlignments = null;
+   _wrapMode;
+   _columnWidthMode;
+   _columnFitter;
+@@ -7185,6 +7186,10 @@ class TextTableRenderable extends Renderable {
+     this._rowCount = newRowCount;
+     this._columnCount = newColumnCount;
+   }
++  set columnAlignments(value) {
++    this._columnAlignments = value ?? null;
++    this.invalidateRasterOnly();
++  }
+   createCell(content) {
+     const styledText = this.toStyledText(content);
+     const textBuffer = TextBuffer.create(this._ctx.widthMethod);
+@@ -7549,7 +7554,16 @@ class TextTableRenderable extends Renderable {
+         const cell = this._cells[rowIdx]?.[colIdx];
+         if (!cell)
+           continue;
+-        buffer.drawTextBuffer(cell.textBufferView, (colOffsets[colIdx] ?? 0) + 1 + cellPaddingX, cellY);
++        const baseX = (colOffsets[colIdx] ?? 0) + 1 + cellPaddingX;
++        const colAlign = this._columnAlignments?.[colIdx] ?? null;
++        let drawX = baseX;
++        if (colAlign === 'right' || colAlign === 'center') {
++          const contentWidth = Math.max(1, (this._layout.columnWidths[colIdx] ?? 1) - cellPaddingX * 2);
++          const measuredWidth = cell.textBufferView.measureForDimensions(contentWidth, 1)?.widthColsMax ?? 0;
++          const slack = Math.max(0, contentWidth - measuredWidth);
++          drawX = baseX + (colAlign === 'right' ? slack : Math.floor(slack / 2));
++        }
++        buffer.drawTextBuffer(cell.textBufferView, drawX, cellY);
+       }
+     }
+   }
+@@ -8766,7 +8780,8 @@ class MarkdownRenderable extends Renderable {
+     return {
+       cache: {
+         content,
+-        cellKeys
++        cellKeys,
++        alignments: table.align
+       },
+       changed
+     };
+@@ -8831,9 +8846,9 @@ class MarkdownRenderable extends Renderable {
+       this.requestRender();
+     }
+   }
+-  createTextTableRenderable(content, id, marginBottom = 0) {
++  createTextTableRenderable(content, id, marginBottom = 0, alignments) {
+     const options = this.resolveTableRenderableOptions();
+-    return new TextTableRenderable(this.ctx, {
++    const tbl = new TextTableRenderable(this.ctx, {
+       id,
+       content,
+       width: "100%",
+@@ -8852,6 +8867,8 @@ class MarkdownRenderable extends Renderable {
+       borderColor: options.borderColor,
+       selectable: options.selectable
+     });
++    if (alignments) tbl.columnAlignments = alignments;
++    return tbl;
+   }
+   createTableBlock(table, id, marginBottom = 0, previousCache, forceRegenerate = false) {
+     const { cache } = this.buildTableContentCache(table, previousCache, forceRegenerate);
+@@ -8861,7 +8878,7 @@ class MarkdownRenderable extends Renderable {
+       };
+     }
+     return {
+-      renderable: this.createTextTableRenderable(cache.content, id, marginBottom),
++      renderable: this.createTextTableRenderable(cache.content, id, marginBottom, cache.alignments),
+       tableContentCache: cache
+     };
+   }
+@@ -9061,13 +9078,14 @@ class MarkdownRenderable extends Renderable {
+         if (changed) {
+           state.renderable.content = cache.content;
+         }
++        state.renderable.columnAlignments = cache.alignments;
+         this.applyTableRenderableOptions(state.renderable, this.resolveTableRenderableOptions());
+         state.renderable.marginBottom = marginBottom;
+         state.tableContentCache = cache;
+         return;
+       }
+       state.renderable.destroyRecursively();
+-      const tableRenderable = this.createTextTableRenderable(cache.content, `${this.id}-block-${index}`, marginBottom);
++      const tableRenderable = this.createTextTableRenderable(cache.content, `${this.id}-block-${index}`, marginBottom, cache.alignments);
+       this.add(tableRenderable, index);
+       state.renderable = tableRenderable;
+       state.tableContentCache = cache;
+@@ -9351,13 +9369,14 @@ class MarkdownRenderable extends Renderable {
+         }
+         if (state.renderable instanceof TextTableRenderable) {
+           state.renderable.content = cache.content;
++          state.renderable.columnAlignments = cache.alignments;
+           this.applyTableRenderableOptions(state.renderable, this.resolveTableRenderableOptions());
+           state.renderable.marginBottom = marginBottom;
+           state.tableContentCache = cache;
+           continue;
+         }
+         state.renderable.destroyRecursively();
+-        const tableRenderable = this.createTextTableRenderable(cache.content, `${this.id}-block-${i}`, marginBottom);
++        const tableRenderable = this.createTextTableRenderable(cache.content, `${this.id}-block-${i}`, marginBottom, cache.alignments);
+         this.add(tableRenderable, i);
+         state.renderable = tableRenderable;
+         state.tableContentCache = cache;

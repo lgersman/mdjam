@@ -5,10 +5,13 @@ import {
   CodeRenderable,
   ScrollBoxRenderable,
   TextRenderable,
+  InputRenderable,
   createMarkdownCodeBlockRenderer,
+  createTextAttributes,
   type RenderContext,
+  type RenderNodeContext,
 } from '@opentui/core'
-import type { Tokens } from 'marked'
+import type { Token, Tokens } from 'marked'
 import { readFileSync, watch } from 'node:fs'
 import yaml from 'js-yaml'
 import { parseFrontmatter } from './parser/frontmatter.js'
@@ -58,6 +61,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     scrollY: true,
     scrollX: false,
   })
+  scrollBox.verticalScrollBar.visible = false
   rootBox.add(scrollBox)
 
   // State side panel (overlay)
@@ -234,10 +238,25 @@ export async function runApp(options: AppOptions): Promise<void> {
       sh: bashRenderer,
     })
 
+    const renderNode = (token: Token, context: RenderNodeContext) => {
+      if (token.type === 'heading') {
+        const h = token as Tokens.Heading
+        const style = context.syntaxStyle.getStyle('markup.heading')
+        return new TextRenderable(renderer, {
+          content: `${'#'.repeat(h.depth)} ${h.text}`,
+          fg: style?.fg,
+          attributes: createTextAttributes({ bold: true }),
+          flexShrink: 0,
+          width: '100%',
+        } as any)
+      }
+      return codeBlockRenderer(token, context)
+    }
+
     currentMarkdown = new MarkdownRenderable(renderer, {
       content: body,
       syntaxStyle,
-      renderNode: codeBlockRenderer,
+      renderNode,
       conceal: true,
       flexShrink: 0,
       width: '100%',
@@ -274,10 +293,9 @@ export async function runApp(options: AppOptions): Promise<void> {
 
   // Global keyboard handler
   renderer.keyInput.on('keypress', async (key) => {
-    // Skip if an input field has focus
+    // Skip global navigation when a text input has focus
     const focused = renderer.currentFocusedRenderable
-    if (focused && !(focused instanceof CodeFenceRenderable)) {
-      // Let the focused element handle it
+    if (focused instanceof InputRenderable) {
       return
     }
 

@@ -3,6 +3,7 @@ import { SyntaxStyle } from '@opentui/core'
 export type ThemeName = 'github-dark' | 'github-light' | 'dracula'
 
 const GITHUB_DARK = {
+  // tree-sitter syntax tokens
   keyword: { fg: '#ff7b72', bold: true },
   string: { fg: '#a5d6ff' },
   number: { fg: '#79c0ff' },
@@ -19,9 +20,20 @@ const GITHUB_DARK = {
   'string.special': { fg: '#a5d6ff' },
   plain: { fg: '#c9d1d9' },
   conceal: { fg: '#8b949e' },
+  // markdown structural styles
+  default: { fg: '#c9d1d9' },
+  'markup.heading': { fg: '#58a6ff', bold: true },
+  'markup.strong': { fg: '#c9d1d9', bold: true },
+  'markup.italic': { fg: '#c9d1d9', italic: true },
+  'markup.strikethrough': { fg: '#8b949e' },
+  'markup.raw': { fg: '#ffa657' },
+  'markup.link': { fg: '#8b949e' },
+  'markup.link.label': { fg: '#58a6ff', underline: true },
+  'markup.link.url': { fg: '#8b949e' },
 }
 
 const GITHUB_LIGHT = {
+  // tree-sitter syntax tokens
   keyword: { fg: '#cf222e', bold: true },
   string: { fg: '#0a3069' },
   number: { fg: '#0550ae' },
@@ -38,9 +50,20 @@ const GITHUB_LIGHT = {
   'string.special': { fg: '#0a3069' },
   plain: { fg: '#24292f' },
   conceal: { fg: '#6e7781' },
+  // markdown structural styles
+  default: { fg: '#24292f' },
+  'markup.heading': { fg: '#0550ae', bold: true },
+  'markup.strong': { fg: '#24292f', bold: true },
+  'markup.italic': { fg: '#24292f', italic: true },
+  'markup.strikethrough': { fg: '#6e7781' },
+  'markup.raw': { fg: '#953800' },
+  'markup.link': { fg: '#6e7781' },
+  'markup.link.label': { fg: '#0969da', underline: true },
+  'markup.link.url': { fg: '#6e7781' },
 }
 
 const DRACULA = {
+  // tree-sitter syntax tokens
   keyword: { fg: '#ff79c6', bold: true },
   string: { fg: '#f1fa8c' },
   number: { fg: '#bd93f9' },
@@ -57,6 +80,16 @@ const DRACULA = {
   'string.special': { fg: '#f1fa8c' },
   plain: { fg: '#f8f8f2' },
   conceal: { fg: '#6272a4' },
+  // markdown structural styles
+  default: { fg: '#f8f8f2' },
+  'markup.heading': { fg: '#bd93f9', bold: true },
+  'markup.strong': { fg: '#f8f8f2', bold: true },
+  'markup.italic': { fg: '#f8f8f2', italic: true },
+  'markup.strikethrough': { fg: '#6272a4' },
+  'markup.raw': { fg: '#50fa7b' },
+  'markup.link': { fg: '#6272a4' },
+  'markup.link.label': { fg: '#8be9fd', underline: true },
+  'markup.link.url': { fg: '#6272a4' },
 }
 
 const THEMES: Record<ThemeName, Record<string, { fg?: string; bold?: boolean; italic?: boolean }>> = {

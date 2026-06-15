@@ -42,7 +42,11 @@ export class InputRow extends BoxRenderable {
     }))
 
     // Value field or display
-    const initial = this.stateStore.get(options.name) ?? options.spec.default ?? ''
+    const storeValue = this.stateStore.get(options.name)
+    if (storeValue === undefined && options.spec.default !== undefined) {
+      this.stateStore.set(options.name, options.spec.default, null)
+    }
+    const initial = storeValue ?? options.spec.default ?? ''
     const source = this.resolveSource(options.name)
 
     if (options.spec.readonly) {
@@ -61,6 +65,9 @@ export class InputRow extends BoxRenderable {
       this.valueInput.focusable = true
       this.valueInput.on(InputRenderableEvents.CHANGE, (value: string) => {
         this.stateStore.set(options.name, value, null)
+      })
+      this.valueInput.on(InputRenderableEvents.ENTER, () => {
+        this.emit('submit')
       })
       this.add(this.valueInput)
     }
@@ -94,13 +101,14 @@ export class InputRow extends BoxRenderable {
     })
   }
 
+  get inputRenderable(): InputRenderable | null {
+    return this.valueInput
+  }
+
   get currentValue(): string {
     if (this.valueInput) return this.valueInput.value
-    if (this.valueDisplay) {
-      const content = this.valueDisplay.content
-      return typeof content === 'string' ? content : ''
-    }
-    return this.spec.default ?? ''
+    // TextRenderable.content returns StyledText (not string), so read from state store directly
+    return this.stateStore.get(this.name) ?? this.spec.default ?? ''
   }
 
   hasValue(): boolean {

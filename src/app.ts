@@ -28,6 +28,8 @@ import { PrerequisitePanel } from './components/PrerequisitePanel.js'
 import { SetupErrorPanel } from './components/SetupErrorPanel.js'
 import { StateSidePanel } from './components/StateSidePanel.js'
 import { TeardownPanel } from './components/TeardownPanel.js'
+import { HelpPanel } from './components/HelpPanel.js'
+import { FrontmatterPanel } from './components/FrontmatterPanel.js'
 
 export interface AppOptions {
   filePath: string
@@ -68,12 +70,17 @@ export async function runApp(options: AppOptions): Promise<void> {
   const statePanel = new StateSidePanel(renderer, new StateStore())
   renderer.root.add(statePanel)
 
+  // Help panel (overlay)
+  const helpPanel = new HelpPanel(renderer)
+  renderer.root.add(helpPanel)
+
   // Teardown panel (shown on exit)
   const teardownPanel = new TeardownPanel(renderer)
   rootBox.add(teardownPanel)
 
   // Mutable session state, recreated on reload
   let fenceRenderables: CodeFenceRenderable[] = []
+  let frontmatterPanel: FrontmatterPanel | null = null
   let teardownScript: string | undefined
   let currentMarkdown: MarkdownRenderable | null = null
   let currentStateStore = new StateStore()
@@ -86,6 +93,10 @@ export async function runApp(options: AppOptions): Promise<void> {
       try { r.destroyRecursively() } catch {}
     })
     fenceRenderables = []
+    if (frontmatterPanel) {
+      try { frontmatterPanel.destroyRecursively() } catch {}
+      frontmatterPanel = null
+    }
     allBlocks = new Map()
     currentStateStore.clear()
 
@@ -123,10 +134,18 @@ export async function runApp(options: AppOptions): Promise<void> {
       currentStateStore.set(key, value, null)
     }
 
-    // Verbose: render frontmatter header
+    // Interactive defaults panel — always shown when defaults exist
+    const defaults = frontmatter.defaults ?? {}
+    if (Object.keys(defaults).length > 0) {
+      frontmatterPanel = new FrontmatterPanel(renderer, defaults, currentStateStore)
+      scrollBox.content.add(frontmatterPanel)
+    }
+
+    // Verbose: render non-defaults frontmatter fields as YAML
     if (options.verbose) {
+      const { defaults: _defaults, ...rest } = frontmatter
       const fields = Object.fromEntries(
-        Object.entries(frontmatter).filter(([, v]) => v !== undefined)
+        Object.entries(rest).filter(([, v]) => v !== undefined)
       )
       if (Object.keys(fields).length > 0) {
         const headerBox = new BoxRenderable(renderer, {
@@ -280,32 +299,107 @@ export async function runApp(options: AppOptions): Promise<void> {
   // Initial load
   await loadDocument()
 
-  // Focus management: cycle through focusable code fences
-  let focusIndex = -1
+  // Focus management: flat list of fences (no inputs) and variable editors (fences with inputs)
+  type FocusItem =
+    | { kind: 'fence'; fence: CodeFenceRenderable }
+    | { kind: 'input'; input: InputRenderable; fence: CodeFenceRenderable }
+    | { kind: 'fm-input'; input: InputRenderable; panel: FrontmatterPanel }
+
+  function buildFocusList(): FocusItem[] {
+    const items: FocusItem[] = []
+
+    if (frontmatterPanel) {
+      for (const input of frontmatterPanel.inputRenderables) {
+        items.push({ kind: 'fm-input', input, panel: frontmatterPanel })
+      }
+    }
+
+    for (const fence of fenceRenderables) {
+      if (fence.isExecutionBlocked) continue
+      const inputs = fence.inputRenderables
+      if (inputs.length > 0) {
+        for (const input of inputs) {
+          items.push({ kind: 'input', input, fence })
+        }
+      } else {
+        items.push({ kind: 'fence', fence })
+      }
+    }
+    return items
+  }
 
   function focusNext(delta: 1 | -1): void {
-    const focusable = fenceRenderables.filter(f => !f.isExecutionBlocked)
-    if (focusable.length === 0) return
+    const items = buildFocusList()
+    if (items.length === 0) return
 
-    focusIndex = (focusIndex + delta + focusable.length) % focusable.length
-    renderer.focusRenderable(focusable[focusIndex])
+    const focused = renderer.currentFocusedRenderable
+    let currentIndex = -1
+    if (focused instanceof CodeFenceRenderable) {
+      currentIndex = items.findIndex(i => i.kind === 'fence' && i.fence === focused)
+    } else if (focused instanceof InputRenderable) {
+      currentIndex = items.findIndex(i =>
+        (i.kind === 'input' && i.input === focused) ||
+        (i.kind === 'fm-input' && i.input === focused)
+      )
+    }
+
+    // When nothing is focused, enter the list from the appropriate end
+    const nextIndex = currentIndex === -1
+      ? (delta === 1 ? 0 : items.length - 1)
+      : currentIndex + delta
+
+    if (nextIndex < 0 || nextIndex >= items.length) {
+      focused?.blur()
+      return
+    }
+
+    const item = items[nextIndex]
+    if (item.kind === 'fence') {
+      item.fence.focus()
+      scrollBox.scrollChildIntoView(item.fence.id)
+    } else if (item.kind === 'input') {
+      item.input.focus()
+      scrollBox.scrollChildIntoView(item.fence.id)
+    } else {
+      item.input.focus()
+      scrollBox.scrollChildIntoView(item.panel.id)
+    }
   }
 
   // Global keyboard handler
   renderer.keyInput.on('keypress', async (key) => {
+    // Tab navigation is global — must be handled before the InputRenderable guard
+    if (key.name === 'tab') {
+      key.preventDefault()
+      focusNext(key.shift ? -1 : 1)
+      return
+    }
+
     // Skip global navigation when a text input has focus
     const focused = renderer.currentFocusedRenderable
     if (focused instanceof InputRenderable) {
       return
     }
 
+    const focusedFence = focused instanceof CodeFenceRenderable && focused.hasOutput ? focused : null
+
     switch (key.name) {
+      case 'h':
+        helpPanel.toggle()
+        break
+
+      case 'escape':
+        if (helpPanel.visible) {
+          helpPanel.toggle()
+          break
+        }
+        break
+
       case 'q':
         await quit()
         break
 
       case 'r':
-        focusIndex = -1
         await loadDocument()
         break
 
@@ -315,42 +409,58 @@ export async function runApp(options: AppOptions): Promise<void> {
 
       case 'j':
       case 'down':
-        scrollBox.scrollBy(3)
+        if (focusedFence) {
+          focusedFence.scrollOutputBy(3)
+        } else {
+          scrollBox.scrollBy(3)
+        }
         break
 
       case 'k':
       case 'up':
-        scrollBox.scrollBy(-3)
+        if (focusedFence) {
+          focusedFence.scrollOutputBy(-3)
+        } else {
+          scrollBox.scrollBy(-3)
+        }
         break
 
       case 'space':
       case 'pagedown':
-        scrollBox.scrollBy(renderer.height - 2)
+        if (focusedFence) {
+          focusedFence.scrollOutputBy(10)
+        } else {
+          scrollBox.scrollBy(renderer.height - 2)
+        }
         break
 
       case 'b':
       case 'pageup':
-        scrollBox.scrollBy(-(renderer.height - 2))
+        if (focusedFence) {
+          focusedFence.scrollOutputBy(-10)
+        } else {
+          scrollBox.scrollBy(-(renderer.height - 2))
+        }
         break
 
       case 'g':
         if (!key.shift) {
-          scrollBox.scrollTo(0)
+          if (focusedFence) {
+            focusedFence.scrollOutputTo(0)
+          } else {
+            scrollBox.scrollTo(0)
+          }
         }
         break
 
       case 'G':
-        scrollBox.scrollTo({ x: 0, y: scrollBox.scrollHeight })
-        break
-
-      case 'tab':
-        key.preventDefault()
-        if (key.shift) {
-          focusNext(-1)
+        if (focusedFence) {
+          focusedFence.scrollOutputTo({ x: 0, y: focusedFence.outputScrollHeight })
         } else {
-          focusNext(1)
+          scrollBox.scrollTo({ x: 0, y: scrollBox.scrollHeight })
         }
         break
+
     }
   })
 
@@ -383,7 +493,6 @@ export async function runApp(options: AppOptions): Promise<void> {
       watch(options.filePath, () => {
         if (reloadTimer) clearTimeout(reloadTimer)
         reloadTimer = setTimeout(async () => {
-          focusIndex = -1
           await loadDocument()
           reloadTimer = null
         }, 200)

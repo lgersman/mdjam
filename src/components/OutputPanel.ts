@@ -2,7 +2,7 @@ import { ScrollBoxRenderable, TextRenderable, type RenderContext } from '@opentu
 import type { ScrollBoxOptions } from '@opentui/core'
 
 const MAX_LINES = 10_000
-const OUTPUT_MAX_HEIGHT = 10
+const SCROLL_THRESHOLD = 7
 
 export class OutputPanel extends ScrollBoxRenderable {
   private readonly renderCtx: RenderContext
@@ -12,7 +12,6 @@ export class OutputPanel extends ScrollBoxRenderable {
 
   constructor(ctx: RenderContext, options: ScrollBoxOptions = {}) {
     super(ctx, {
-      maxHeight: OUTPUT_MAX_HEIGHT,
       flexShrink: 0,
       scrollY: true,
       scrollX: false,
@@ -43,6 +42,7 @@ export class OutputPanel extends ScrollBoxRenderable {
           content: `[output truncated at ${MAX_LINES} lines]`,
           flexShrink: 0,
         }))
+        this.maxHeight = SCROLL_THRESHOLD
         return
       }
 
@@ -53,8 +53,13 @@ export class OutputPanel extends ScrollBoxRenderable {
     }
 
     if (lines.length > 0) {
+      this.maxHeight = Math.min(this.lineCount, SCROLL_THRESHOLD)
       this.visible = true
     }
+  }
+
+  get hasOutput(): boolean {
+    return this.lineCount > 0
   }
 
   clear(): void {
@@ -64,6 +69,7 @@ export class OutputPanel extends ScrollBoxRenderable {
     }
     this.lineCount = 0
     this.truncated = false
+    this.maxHeight = undefined
     this.visible = false
   }
 

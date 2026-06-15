@@ -2,6 +2,7 @@ import {
   BoxRenderable,
   TextRenderable,
   CodeRenderable,
+  InputRenderable,
   type RenderContext,
   type KeyEvent,
 } from '@opentui/core'
@@ -72,6 +73,13 @@ export class CodeFenceRenderable extends BoxRenderable {
     // Input panel (only if inputs declared)
     if (opts.metadata?.inputs && Object.keys(opts.metadata.inputs).length > 0) {
       this.inputPanel = new InputPanel(ctx, opts.metadata, opts.stateStore)
+      this.inputPanel.on('submit', () => {
+        if (opts.executionBlocked) return
+        if (this.inputPanel && !this.inputPanel.allInputsSatisfied()) return
+        if (this.runner.status === 'running') return
+        this.outputPanel.clear()
+        opts.onExecute().catch(() => {})
+      })
       this.add(this.inputPanel)
     }
 
@@ -109,6 +117,7 @@ export class CodeFenceRenderable extends BoxRenderable {
     } else if (this.inputPanel && !this.inputPanel.allInputsSatisfied()) {
       const missing = this.inputPanel.missingInputs()
       this.statusBar.update('blocked', null, missing)
+      this.runner.status = 'blocked'
     } else {
       this.statusBar.update('idle')
     }
@@ -118,12 +127,29 @@ export class CodeFenceRenderable extends BoxRenderable {
       opts.stateStore.on('change', () => {
         if (!opts.executionBlocked && this.runner.status === 'blocked') {
           if (this.inputPanel!.allInputsSatisfied()) {
+            this.runner.status = 'idle'
             this.statusBar.update('idle')
             this.runner.emit('status', 'idle')
           }
         }
       })
     }
+  }
+
+  get hasOutput(): boolean {
+    return this.outputPanel.hasOutput
+  }
+
+  scrollOutputBy(delta: number): void {
+    this.outputPanel.scrollBy(delta)
+  }
+
+  scrollOutputTo(position: number | { x: number; y: number }): void {
+    this.outputPanel.scrollTo(position)
+  }
+
+  get outputScrollHeight(): number {
+    return this.outputPanel.scrollHeight
   }
 
   override handleKeyPress(key: KeyEvent): boolean {
@@ -155,6 +181,10 @@ export class CodeFenceRenderable extends BoxRenderable {
     } else {
       this.borderColor = '#30363d'
     }
+  }
+
+  get inputRenderables(): InputRenderable[] {
+    return this.inputPanel?.inputRenderables ?? []
   }
 
   get blockId(): string {

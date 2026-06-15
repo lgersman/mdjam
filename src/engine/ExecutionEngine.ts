@@ -27,6 +27,11 @@ export class ExecutionEngine {
       return false
     }
 
+    // Always re-run the target even if it ran before; dependencies that
+    // already succeeded are still skipped via the successfulBlocks check below.
+    this.successfulBlocks.delete(target.id)
+    this.failedBlocks.delete(target.id)
+
     const depsMap = new Map(
       Array.from(this.allBlocks.values()).map(b => [b.id, b.depends])
     )

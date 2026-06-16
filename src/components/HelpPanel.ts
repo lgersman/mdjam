@@ -14,7 +14,7 @@ const HOTKEYS: { key: string; description: string }[] = [
   { key: 'b / PgUp',      description: 'Page up' },
   { key: 'g',             description: 'Scroll to top' },
   { key: 'G',             description: 'Scroll to bottom' },
-  { key: 'q',             description: 'Quit' },
+  { key: 'Ctrl+C',        description: 'Quit' },
 ]
 
 export class HelpPanel extends BoxRenderable {

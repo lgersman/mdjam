@@ -348,10 +348,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       ? (delta === 1 ? 0 : items.length - 1)
       : currentIndex + delta
 
-    if (nextIndex < 0 || nextIndex >= items.length) {
-      focused?.blur()
-      return
-    }
+    if (nextIndex < 0 || nextIndex >= items.length) return
 
     const item = items[nextIndex]
     if (item.kind === 'fence') {
@@ -368,6 +365,11 @@ export async function runApp(options: AppOptions): Promise<void> {
 
   // Global keyboard handler
   renderer.keyInput.on('keypress', async (key) => {
+    if (key.name === 'c' && key.ctrl) {
+      await quit()
+      return
+    }
+
     // Tab navigation is global — must be handled before the InputRenderable guard
     if (key.name === 'tab') {
       key.preventDefault()
@@ -378,6 +380,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     // Skip global navigation when a text input has focus
     const focused = renderer.currentFocusedRenderable
     if (focused instanceof InputRenderable) {
+      if (key.name === 'escape') focused.blur()
       return
     }
 
@@ -393,10 +396,7 @@ export async function runApp(options: AppOptions): Promise<void> {
           helpPanel.toggle()
           break
         }
-        break
-
-      case 'q':
-        await quit()
+        focused?.blur()
         break
 
       case 'r':

@@ -30,6 +30,8 @@ import { StateSidePanel } from './components/StateSidePanel.js'
 import { TeardownPanel } from './components/TeardownPanel.js'
 import { HelpPanel } from './components/HelpPanel.js'
 import { FrontmatterPanel } from './components/FrontmatterPanel.js'
+import { BottomStatusBar } from './components/BottomStatusBar.js'
+import type { BlockStatus } from './engine/BlockRunner.js'
 
 export interface AppOptions {
   filePath: string
@@ -74,6 +76,10 @@ export async function runApp(options: AppOptions): Promise<void> {
   const helpPanel = new HelpPanel(renderer)
   renderer.root.add(helpPanel)
 
+  // Static status bar at bottom
+  const bottomStatusBar = new BottomStatusBar(renderer)
+  rootBox.add(bottomStatusBar)
+
   // Teardown panel (shown on exit)
   const teardownPanel = new TeardownPanel(renderer)
   rootBox.add(teardownPanel)
@@ -87,7 +93,30 @@ export async function runApp(options: AppOptions): Promise<void> {
   let executionEngine: ExecutionEngine | null = null
   let allBlocks = new Map<string, FenceBlock>()
 
+  // Focus tracking for bottom status bar
+  let trackedFence: CodeFenceRenderable | null = null
+  let trackedStatusListener: ((status: BlockStatus, exitCode?: number) => void) | null = null
+
+  function attachFenceStatusListener(fence: CodeFenceRenderable | null): void {
+    if (trackedFence && trackedStatusListener) {
+      trackedFence.runner.off('status', trackedStatusListener)
+    }
+    trackedFence = fence
+    trackedStatusListener = null
+    if (fence) {
+      trackedStatusListener = (status: BlockStatus, exitCode?: number) => {
+        bottomStatusBar.updateBlockStatus(status, exitCode, fence.missingInputs)
+      }
+      fence.runner.on('status', trackedStatusListener)
+      bottomStatusBar.updateBlockStatus(fence.runner.status, fence.runner.exitCode ?? undefined, fence.missingInputs)
+    }
+  }
+
   async function loadDocument(): Promise<void> {
+    // Detach status bar listener before destroying fences
+    attachFenceStatusListener(null)
+    bottomStatusBar.setContext('markdown')
+
     // Cleanup previous session
     fenceRenderables.forEach(r => {
       try { r.destroyRecursively() } catch {}
@@ -328,6 +357,31 @@ export async function runApp(options: AppOptions): Promise<void> {
     return items
   }
 
+  function updateStatusBar(): void {
+    const focused = renderer.currentFocusedRenderable
+
+    if (focused instanceof CodeFenceRenderable) {
+      bottomStatusBar.setContext('codeblock')
+      attachFenceStatusListener(focused)
+    } else if (focused instanceof InputRenderable) {
+      const items = buildFocusList()
+      const item = items.find(i =>
+        (i.kind === 'input' && i.input === focused) ||
+        (i.kind === 'fm-input' && i.input === focused)
+      )
+      if (item?.kind === 'input') {
+        bottomStatusBar.setContext('block-input')
+        attachFenceStatusListener(item.fence)
+      } else {
+        bottomStatusBar.setContext('fm-input')
+        attachFenceStatusListener(null)
+      }
+    } else {
+      attachFenceStatusListener(null)
+      bottomStatusBar.setContext('markdown')
+    }
+  }
+
   function focusNext(delta: 1 | -1): void {
     const items = buildFocusList()
     if (items.length === 0) return
@@ -361,6 +415,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       item.input.focus()
       scrollBox.scrollChildIntoView(item.panel.id)
     }
+    updateStatusBar()
   }
 
   // Global keyboard handler
@@ -380,7 +435,10 @@ export async function runApp(options: AppOptions): Promise<void> {
     // Skip global navigation when a text input has focus
     const focused = renderer.currentFocusedRenderable
     if (focused instanceof InputRenderable) {
-      if (key.name === 'escape') focused.blur()
+      if (key.name === 'escape') {
+        focused.blur()
+        updateStatusBar()
+      }
       return
     }
 
@@ -397,10 +455,12 @@ export async function runApp(options: AppOptions): Promise<void> {
           break
         }
         focused?.blur()
+        updateStatusBar()
         break
 
       case 'r':
         await loadDocument()
+        updateStatusBar()
         break
 
       case 's':

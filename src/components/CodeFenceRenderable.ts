@@ -9,7 +9,6 @@ import {
 import type { SyntaxStyle } from '@opentui/core'
 import type { Tokens } from 'marked'
 import { InputPanel } from './InputPanel.js'
-import { StatusBar } from './StatusBar.js'
 import { OutputPanel } from './OutputPanel.js'
 import type { FenceMetadata } from '../parser/metadata.js'
 import type { BlockRunner } from '../engine/BlockRunner.js'
@@ -29,9 +28,8 @@ export interface CodeFenceOptions {
 
 export class CodeFenceRenderable extends BoxRenderable {
   private inputPanel: InputPanel | null = null
-  private statusBar: StatusBar
   private outputPanel: OutputPanel
-  private readonly runner: BlockRunner
+  private readonly _runner: BlockRunner
   private readonly options: CodeFenceOptions
 
   constructor(ctx: RenderContext, opts: CodeFenceOptions) {
@@ -45,7 +43,7 @@ export class CodeFenceRenderable extends BoxRenderable {
       focusable: true,
     })
 
-    this.runner = opts.runner
+    this._runner = opts.runner
     this.options = opts
 
     // Header: description or parseError
@@ -93,43 +91,27 @@ export class CodeFenceRenderable extends BoxRenderable {
       paddingLeft: 2,
     }))
 
-    // Status bar
-    this.statusBar = new StatusBar(ctx)
-    this.add(this.statusBar)
-
     // Output panel (hidden until execution)
     this.outputPanel = new OutputPanel(ctx)
     this.add(this.outputPanel)
 
-    // Wire up runner events
-    this.runner.on('status', (status, exitCode) => {
-      const missing = this.inputPanel?.missingInputs()
-      this.statusBar.update(status, exitCode, missing)
-    })
-
-    this.runner.on('output', (text: string) => {
+    // Wire up runner output
+    this._runner.on('output', (text: string) => {
       this.outputPanel.append(text)
     })
 
-    // Initial status
-    if (opts.executionBlocked) {
-      this.statusBar.update('blocked')
-    } else if (this.inputPanel && !this.inputPanel.allInputsSatisfied()) {
-      const missing = this.inputPanel.missingInputs()
-      this.statusBar.update('blocked', null, missing)
-      this.runner.status = 'blocked'
-    } else {
-      this.statusBar.update('idle')
+    // Initial blocked state
+    if (opts.executionBlocked || (this.inputPanel && !this.inputPanel.allInputsSatisfied())) {
+      this._runner.status = 'blocked'
     }
 
     // Watch state store for input changes that may unblock this fence
     if (this.inputPanel) {
       opts.stateStore.on('change', () => {
-        if (!opts.executionBlocked && this.runner.status === 'blocked') {
+        if (!opts.executionBlocked && this._runner.status === 'blocked') {
           if (this.inputPanel!.allInputsSatisfied()) {
-            this.runner.status = 'idle'
-            this.statusBar.update('idle')
-            this.runner.emit('status', 'idle')
+            this._runner.status = 'idle'
+            this._runner.emit('status', 'idle')
           }
         }
       })
@@ -156,7 +138,7 @@ export class CodeFenceRenderable extends BoxRenderable {
     if (key.name === 'return' || key.name === 'enter') {
       if (this.options.executionBlocked) return true
       if (this.inputPanel && !this.inputPanel.allInputsSatisfied()) return true
-      if (this.runner.status === 'running') return true
+      if (this._runner.status === 'running') return true
 
       this.outputPanel.clear()
       this.options.onExecute().catch(() => {})
@@ -164,8 +146,8 @@ export class CodeFenceRenderable extends BoxRenderable {
     }
 
     if (key.name === 'escape') {
-      if (this.runner.status === 'running') {
-        this.runner.cancel()
+      if (this._runner.status === 'running') {
+        this._runner.cancel()
       }
       return true
     }
@@ -175,7 +157,6 @@ export class CodeFenceRenderable extends BoxRenderable {
 
   protected override propagateFocusChange(hasFocus: boolean): void {
     super.propagateFocusChange(hasFocus)
-    this.statusBar.setFocused(hasFocus)
     if (hasFocus) {
       this.borderColor = '#58a6ff'
     } else {
@@ -187,8 +168,16 @@ export class CodeFenceRenderable extends BoxRenderable {
     return this.inputPanel?.inputRenderables ?? []
   }
 
+  get missingInputs(): string[] {
+    return this.inputPanel?.missingInputs() ?? []
+  }
+
+  get runner(): BlockRunner {
+    return this._runner
+  }
+
   get blockId(): string {
-    return this.runner.blockId
+    return this._runner.blockId
   }
 
   get depends(): string[] {

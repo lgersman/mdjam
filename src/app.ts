@@ -43,6 +43,63 @@ export interface AppOptions {
   verbose: boolean
 }
 
+// ponytail: getInterBlockMargin is private; patch prototype so list→heading gets margin=1
+;(MarkdownRenderable.prototype as any).getInterBlockMargin = (function (orig) {
+  return function (this: unknown, token: any, nextToken: any) {
+    if (token?.type === 'list' && nextToken?.type === 'heading') return 1
+    return orig.call(this, token, nextToken)
+  }
+})((MarkdownRenderable.prototype as any).getInterBlockMargin)
+
+// ponytail: createBlockquoteRenderable renders token.text as raw markdown text, ignoring token.tokens.
+// Tables (and other block-level elements) inside blockquotes are never rendered structurally. Fix both
+// initial render and the update path (applyBlockquoteRenderable) used by streaming/file-watch.
+function _fillBlockquoteChildren(self: any, renderable: any, token: any, idPrefix: string) {
+  for (let i = 0; i < (token.tokens ?? []).length; i++) {
+    const child = token.tokens[i]
+    if (child.type === 'space') continue
+    const childId = `${idPrefix}-child-${i}`
+    if (child.type === 'table') {
+      // ponytail: content-width so the table doesn't expand to fill the whole blockquote
+      const prev = self._tableOptions
+      self._tableOptions = { ...prev, widthMode: 'content' }
+      renderable.add(self.createTableBlock(child, childId).renderable)
+      self._tableOptions = prev
+    }
+    else if (child.type === 'code') renderable.add(self.createCodeRenderable(child, childId))
+    else if (child.type === 'hr') renderable.add(self.createHorizontalRuleRenderable(childId))
+    else if (child.type === 'blockquote') renderable.add(self.createBlockquoteRenderable(child, childId))
+    else renderable.add(self.createMarkdownCodeRenderable(
+      child.raw ?? self.getBlockquoteContent(child), childId, 0, self._linkifyMarkdownChunks, 'markup.quote'
+    ))
+  }
+}
+function _hasStructuredBlocks(token: any) {
+  return (token.tokens ?? []).some(
+    (t: any) => t.type === 'table' || t.type === 'code' || t.type === 'hr' || t.type === 'blockquote'
+  )
+}
+;(MarkdownRenderable.prototype as any).createBlockquoteRenderable = (function (orig: Function) {
+  return function (this: any, token: any, id: string, marginBottom = 0) {
+    if (!_hasStructuredBlocks(token)) return orig.call(this, token, id, marginBottom)
+    const renderable = new BoxRenderable(this.ctx, {
+      id, width: '100%', border: ['left'], borderColor: this.getBlockquoteBorderColor(),
+      paddingLeft: 1, flexShrink: 0, marginBottom,
+    })
+    _fillBlockquoteChildren(this, renderable, token, id)
+    return renderable
+  }
+})((MarkdownRenderable.prototype as any).createBlockquoteRenderable)
+;(MarkdownRenderable.prototype as any).applyBlockquoteRenderable = (function (orig: Function) {
+  return function (this: any, renderable: any, token: any, marginBottom: number) {
+    if (!_hasStructuredBlocks(token)) return orig.call(this, renderable, token, marginBottom)
+    renderable.borderColor = this.getBlockquoteBorderColor()
+    renderable.marginBottom = marginBottom
+    for (const existing of renderable.getChildren()) existing.destroyRecursively()
+    _fillBlockquoteChildren(this, renderable, token, renderable.id)
+  }
+})((MarkdownRenderable.prototype as any).applyBlockquoteRenderable)
+
 export async function runApp(options: AppOptions): Promise<void> {
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,

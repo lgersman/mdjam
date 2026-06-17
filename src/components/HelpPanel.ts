@@ -1,4 +1,5 @@
 import { BoxRenderable, TextRenderable, TextTableRenderable, fg, type RenderContext } from '@opentui/core'
+import { BG_BASE, ACCENT, FG_DEFAULT, ATTENTION } from '../theme/colors.js'
 
 const HOTKEYS: { key: string; description: string }[] = [
   { key: 'h',             description: 'Show / hide this help' },
@@ -28,8 +29,8 @@ export class HelpPanel extends BoxRenderable {
       width: '60%',
       flexDirection: 'column',
       border: true,
-      borderColor: '#58a6ff',
-      backgroundColor: '#0d1117',
+      borderColor: ACCENT,
+      backgroundColor: BG_BASE,
       zIndex: 200,
       visible: false,
       paddingBottom: 1,
@@ -37,7 +38,7 @@ export class HelpPanel extends BoxRenderable {
 
     this.add(new TextRenderable(ctx, {
       content: '  Keyboard shortcuts  [h] or [Esc] to close',
-      fg: '#58a6ff',
+      fg: ACCENT,
       bold: true,
       flexShrink: 0,
       paddingTop: 1,
@@ -45,8 +46,8 @@ export class HelpPanel extends BoxRenderable {
     } as any))
 
     const tableContent = HOTKEYS.map(({ key, description }) => [
-      [fg('#e3b341')(key)],
-      [fg('#c9d1d9')(description)],
+      [fg(ATTENTION)(key)],
+      [fg(FG_DEFAULT)(description)],
     ])
 
     this.add(new TextTableRenderable(ctx, {
@@ -56,7 +57,7 @@ export class HelpPanel extends BoxRenderable {
       showBorders: false,
       border: false,
       outerBorder: false,
-      backgroundColor: '#0d1117',
+      backgroundColor: BG_BASE,
       cellPaddingX: 2,
       flexShrink: 0,
     } as any))

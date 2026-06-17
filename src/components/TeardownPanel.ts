@@ -1,4 +1,5 @@
 import { BoxRenderable, TextRenderable, type RenderContext } from '@opentui/core'
+import { BORDER_DEFAULT, FG_MUTED, FG_DEFAULT } from '../theme/colors.js'
 
 export class TeardownPanel extends BoxRenderable {
   private readonly renderCtx: RenderContext
@@ -8,7 +9,7 @@ export class TeardownPanel extends BoxRenderable {
       flexDirection: 'column',
       flexShrink: 0,
       border: true,
-      borderColor: '#30363d',
+      borderColor: BORDER_DEFAULT,
       visible: false,
     })
 
@@ -16,7 +17,7 @@ export class TeardownPanel extends BoxRenderable {
 
     this.add(new TextRenderable(ctx, {
       content: '  Teardown',
-      fg: '#8b949e',
+      fg: FG_MUTED,
       flexShrink: 0,
     }))
   }
@@ -24,7 +25,7 @@ export class TeardownPanel extends BoxRenderable {
   appendOutput(text: string): void {
     this.add(new TextRenderable(this.renderCtx, {
       content: `  ${text}`,
-      fg: '#c9d1d9',
+      fg: FG_DEFAULT,
       flexShrink: 0,
     }))
     this.visible = true

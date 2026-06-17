@@ -24,6 +24,7 @@ import { LifecycleRunner } from './engine/LifecycleRunner.js'
 import { ExecutionEngine, type FenceBlock } from './engine/ExecutionEngine.js'
 import { checkPrerequisites } from './engine/Prerequisites.js'
 import { createSyntaxStyle, type ThemeName } from './theme/themes.js'
+import { BORDER_DEFAULT, DANGER, FG_MUTED } from './theme/colors.js'
 import { CodeFenceRenderable } from './components/CodeFenceRenderable.js'
 import { PrerequisitePanel } from './components/PrerequisitePanel.js'
 import { SetupErrorPanel } from './components/SetupErrorPanel.js'
@@ -150,7 +151,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       const errBox = new BoxRenderable(renderer, { flexDirection: 'column', padding: 1 })
       errBox.add(new TextRenderable(renderer, {
         content: `Error reading file: ${err instanceof Error ? err.message : String(err)}`,
-        fg: '#f85149',
+        fg: DANGER,
       }))
       scrollBox.content.add(errBox)
       return
@@ -186,11 +187,11 @@ export async function runApp(options: AppOptions): Promise<void> {
           flexShrink: 0,
           marginBottom: 1,
           border: true,
-          borderColor: '#30363d',
+          borderColor: BORDER_DEFAULT,
         })
         headerBox.add(new TextRenderable(renderer, {
           content: '  Frontmatter',
-          fg: '#8b949e',
+          fg: FG_MUTED,
           italic: true,
           flexShrink: 0,
         } as any))

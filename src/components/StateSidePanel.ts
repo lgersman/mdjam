@@ -1,5 +1,6 @@
 import { BoxRenderable, TextRenderable, type RenderContext } from '@opentui/core'
 import type { StateStore } from '../engine/StateStore.js'
+import { BG_BASE, BORDER_DEFAULT, FG_DEFAULT, FG_SUBTLE, ACCENT_SUBTLE } from '../theme/colors.js'
 
 export class StateSidePanel extends BoxRenderable {
   private contentBox: BoxRenderable
@@ -15,8 +16,8 @@ export class StateSidePanel extends BoxRenderable {
       height: '100%',
       flexDirection: 'column',
       border: true,
-      borderColor: '#30363d',
-      backgroundColor: '#0d1117',
+      borderColor: BORDER_DEFAULT,
+      backgroundColor: BG_BASE,
       zIndex: 100,
       visible: false,
     })
@@ -26,7 +27,7 @@ export class StateSidePanel extends BoxRenderable {
 
     this.add(new TextRenderable(ctx, {
       content: ' State Store  [s] to close',
-      fg: '#c9d1d9',
+      fg: FG_DEFAULT,
       bold: true,
       flexShrink: 0,
       paddingBottom: 1,
@@ -63,7 +64,7 @@ export class StateSidePanel extends BoxRenderable {
     if (this.stateStore.size() === 0) {
       this.contentBox.add(new TextRenderable(this.renderCtx, {
         content: '  (empty)',
-        fg: '#6e7781',
+        fg: FG_SUBTLE,
       }))
       return
     }
@@ -72,7 +73,7 @@ export class StateSidePanel extends BoxRenderable {
       const source = entry.sourceBlock === null ? 'setup' : `block:${entry.sourceBlock}`
       const row = new TextRenderable(this.renderCtx, {
         content: `  ${key} = ${entry.value}  [${source}]`,
-        fg: '#a5d6ff',
+        fg: ACCENT_SUBTLE,
         flexShrink: 0,
       })
       this.contentBox.add(row)

@@ -6,6 +6,7 @@ import {
 } from '@opentui/core'
 import { InputRow } from './InputRow.js'
 import type { StateStore } from '../engine/StateStore.js'
+import { BORDER_DEFAULT, FG_MUTED } from '../theme/colors.js'
 
 export class FrontmatterPanel extends BoxRenderable {
   private rows: InputRow[] = []
@@ -20,12 +21,12 @@ export class FrontmatterPanel extends BoxRenderable {
       flexShrink: 0,
       marginBottom: 1,
       border: true,
-      borderColor: '#30363d',
+      borderColor: BORDER_DEFAULT,
     })
 
     this.add(new TextRenderable(ctx, {
       content: '  Variables',
-      fg: '#8b949e',
+      fg: FG_MUTED,
       italic: true,
       flexShrink: 0,
     } as any))

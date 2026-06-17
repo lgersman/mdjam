@@ -7,6 +7,7 @@ import {
 } from '@opentui/core'
 import type { InputSpec } from '../parser/metadata.js'
 import type { StateStore } from '../engine/StateStore.js'
+import { FG_MUTED, FG_SUBTLE, ACCENT_SUBTLE, FG_INPUT } from '../theme/colors.js'
 
 export interface InputRowOptions {
   name: string
@@ -37,7 +38,7 @@ export class InputRow extends BoxRenderable {
     // Name label
     this.add(new TextRenderable(ctx, {
       content: `  ${options.name}: `,
-      fg: '#8b949e',
+      fg: FG_MUTED,
       flexShrink: 0,
     }))
 
@@ -52,14 +53,14 @@ export class InputRow extends BoxRenderable {
     if (options.spec.readonly) {
       this.valueDisplay = new TextRenderable(ctx, {
         content: initial,
-        fg: '#a5d6ff',
+        fg: ACCENT_SUBTLE,
         flexGrow: 1,
       })
       this.add(this.valueDisplay)
     } else {
       this.valueInput = new InputRenderable(ctx, {
         value: initial,
-        textColor: '#f0f0f0',
+        textColor: FG_INPUT,
         flexGrow: 1,
       })
       this.valueInput.focusable = true
@@ -74,7 +75,7 @@ export class InputRow extends BoxRenderable {
 
     this.sourceLabel = new TextRenderable(ctx, {
       content: source ? ` [${source}]` : '',
-      fg: '#6e7781',
+      fg: FG_SUBTLE,
       flexShrink: 0,
     })
     this.add(this.sourceLabel)
@@ -87,7 +88,7 @@ export class InputRow extends BoxRenderable {
       })
       desc.add(new TextRenderable(ctx, {
         content: options.spec.description,
-        fg: '#6e7781',
+        fg: FG_SUBTLE,
         italic: true,
       } as any))
       this.add(desc)

@@ -1,14 +1,15 @@
 import { BoxRenderable, TextRenderable, type RenderContext } from '@opentui/core'
 import type { BlockStatus } from '../engine/BlockRunner.js'
+import { BG_SURFACE, FG_MUTED, FG_SUBTLE, ACCENT, SUCCESS, RUNNING, DANGER } from '../theme/colors.js'
 
-const STATUS_MAP: Record<BlockStatus, { icon: string; fg: string; label: string }> = {
-  idle:         { icon: '○', fg: '#8b949e', label: 'Ready' },
-  running:      { icon: '⟳', fg: '#f0a030', label: 'Running…' },
-  success:      { icon: '✓', fg: '#3fb950', label: 'Done' },
-  failed:       { icon: '✗', fg: '#f85149', label: 'Failed' },
-  cancelled:    { icon: '◌', fg: '#8b949e', label: 'Cancelled' },
-  blocked:      { icon: '○', fg: '#8b949e', label: 'Blocked' },
-  'dep-failed': { icon: '✗', fg: '#f85149', label: 'Skipped — dep failed' },
+const STATUS_MAP: Record<BlockStatus, { fg: string; label: string }> = {
+  idle:         { fg: FG_MUTED,  label: 'Ready' },
+  running:      { fg: RUNNING,   label: 'Running…' },
+  success:      { fg: SUCCESS,   label: 'Done' },
+  failed:       { fg: DANGER,    label: 'Failed' },
+  cancelled:    { fg: FG_MUTED,  label: 'Cancelled' },
+  blocked:      { fg: FG_MUTED,  label: 'Blocked' },
+  'dep-failed': { fg: DANGER,    label: 'Skipped — dep failed' },
 }
 
 export type BarContext = 'markdown' | 'fm-input' | 'block-input' | 'codeblock'
@@ -27,21 +28,21 @@ export class BottomStatusBar extends BoxRenderable {
       flexDirection: 'row',
       flexShrink: 0,
       width: '100%',
-      backgroundColor: '#161b22',
+      backgroundColor: BG_SURFACE,
       paddingLeft: 1,
       paddingRight: 1,
     })
 
     this.leftText = new TextRenderable(ctx, {
       content: '',
-      fg: '#8b949e',
+      fg: FG_MUTED,
       flexGrow: 1,
     })
     this.add(this.leftText)
 
     this.rightText = new TextRenderable(ctx, {
       content: '[Tab] Next  [j/k] Scroll  [h] Help  [r] Reload  [s] State  [Ctrl+C] Quit',
-      fg: '#6e7781',
+      fg: FG_SUBTLE,
       flexShrink: 0,
     })
     this.add(this.rightText)
@@ -50,7 +51,7 @@ export class BottomStatusBar extends BoxRenderable {
   flash(message: string, durationMs = 2000): void {
     if (this.flashTimer) clearTimeout(this.flashTimer)
     this.leftText.content = message
-    ;(this.leftText as any).fg = '#3fb950'
+    ;(this.leftText as any).fg = SUCCESS
     this.flashTimer = setTimeout(() => {
       this.flashTimer = null
       this.refresh()
@@ -72,14 +73,14 @@ export class BottomStatusBar extends BoxRenderable {
   private refresh(): void {
     if (this.context === 'markdown') {
       this.leftText.content = ''
-      ;(this.leftText as any).fg = '#8b949e'
+      ;(this.leftText as any).fg = FG_MUTED
       this.rightText.content = '[Tab] Next  [j/k] Scroll  [h] Help  [r] Reload  [s] State  [Ctrl+C] Quit'
       return
     }
 
     if (this.context === 'fm-input') {
       this.leftText.content = 'Variables'
-      ;(this.leftText as any).fg = '#58a6ff'
+      ;(this.leftText as any).fg = ACCENT
       this.rightText.content = '[Enter] Confirm  [Esc] Blur  [Tab] Next  [h] Help'
       return
     }

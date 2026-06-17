@@ -1,5 +1,6 @@
 import { BoxRenderable, TextRenderable, type RenderContext } from '@opentui/core'
 import type { PrerequisiteResult } from '../engine/Prerequisites.js'
+import { DANGER, WARNING } from '../theme/colors.js'
 
 export class PrerequisitePanel extends BoxRenderable {
   constructor(ctx: RenderContext, result: PrerequisiteResult) {
@@ -7,13 +8,13 @@ export class PrerequisitePanel extends BoxRenderable {
       flexDirection: 'column',
       flexShrink: 0,
       border: true,
-      borderColor: '#f85149',
+      borderColor: DANGER,
       marginBottom: 1,
     })
 
     this.add(new TextRenderable(ctx, {
       content: '  Prerequisites failed — code fence execution is disabled',
-      fg: '#f85149',
+      fg: DANGER,
       bold: true,
       flexShrink: 0,
     } as any))
@@ -21,7 +22,7 @@ export class PrerequisitePanel extends BoxRenderable {
     for (const msg of result.failed) {
       this.add(new TextRenderable(ctx, {
         content: `  ✗ ${msg}`,
-        fg: '#ffa657',
+        fg: WARNING,
         flexShrink: 0,
       }))
     }

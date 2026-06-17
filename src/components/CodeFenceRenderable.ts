@@ -6,6 +6,7 @@ import {
   type RenderContext,
   type KeyEvent,
 } from '@opentui/core'
+import { BORDER_DEFAULT, ACCENT, DANGER, FG_MUTED } from '../theme/colors.js'
 import type { SyntaxStyle } from '@opentui/core'
 import type { Tokens } from 'marked'
 import { InputPanel } from './InputPanel.js'
@@ -38,8 +39,8 @@ export class CodeFenceRenderable extends BoxRenderable {
       flexShrink: 0,
       marginBottom: 1,
       border: true,
-      borderColor: '#30363d',
-      focusedBorderColor: '#58a6ff',
+      borderColor: BORDER_DEFAULT,
+      focusedBorderColor: ACCENT,
       focusable: true,
     })
 
@@ -50,14 +51,14 @@ export class CodeFenceRenderable extends BoxRenderable {
     if (opts.parseError) {
       this.add(new TextRenderable(ctx, {
         content: `⚠ Metadata parse error: ${opts.parseError}`,
-        fg: '#f85149',
+        fg: DANGER,
         flexShrink: 0,
         paddingLeft: 1,
       }))
     } else if (opts.metadata?.description) {
       this.add(new TextRenderable(ctx, {
         content: `  ${opts.metadata.description}`,
-        fg: '#8b949e',
+        fg: FG_MUTED,
         italic: true,
         flexShrink: 0,
       } as any))
@@ -162,9 +163,9 @@ export class CodeFenceRenderable extends BoxRenderable {
   protected override propagateFocusChange(hasFocus: boolean): void {
     super.propagateFocusChange(hasFocus)
     if (hasFocus) {
-      this.borderColor = '#58a6ff'
+      this.borderColor = ACCENT
     } else {
-      this.borderColor = '#30363d'
+      this.borderColor = BORDER_DEFAULT
     }
   }
 

@@ -302,22 +302,49 @@ export async function runApp(options: AppOptions): Promise<void> {
       }
     }
 
+    const patchListItems = (token: Tokens.List, box: BoxRenderable): void => {
+      const children = box.getChildren()
+      for (let i = 0; i < token.items.length; i++) {
+        const child = children[i]
+        if (!(child instanceof BoxRenderable)) continue
+        const item = token.items[i]
+        const rowChildren = child.getChildren()
+        const marker = rowChildren[0]
+        if (marker instanceof TextRenderable) {
+          if (item?.task) {
+            const newText = item.checked ? '[✓] ' : '[ ] '
+            if (marker.chunks[0]?.text !== newText) {
+              marker.width = 4
+              marker.content = newText
+            }
+          } else if (marker.chunks[0]?.text === '- ') {
+            marker.content = '• '
+          }
+        }
+        const contentBox = rowChildren[1]
+        if (contentBox instanceof BoxRenderable) {
+          patchListBullets(contentBox)
+        }
+      }
+    }
+
     const renderNode = (token: Token, context: RenderNodeContext) => {
       if (token.type === 'heading') {
         const h = token as Tokens.Heading
         const style = context.syntaxStyle.getStyle('markup.heading')
-        return new TextRenderable(renderer, {
+        const headingBox = new BoxRenderable(renderer, { flexDirection: 'column', flexShrink: 0, marginBottom: 1 })
+        headingBox.add(new TextRenderable(renderer, {
           content: `${'#'.repeat(h.depth)} ${h.text}`,
           fg: style?.fg,
           attributes: createTextAttributes({ bold: true }),
-          flexShrink: 0,
           width: '100%',
-        } as any)
+        } as any))
+        return headingBox
       }
       if (token.type === 'list' && !(token as Tokens.List).ordered) {
         const defaultRenderable = context.defaultRender()
         if (defaultRenderable instanceof BoxRenderable) {
-          patchListBullets(defaultRenderable)
+          patchListItems(token as Tokens.List, defaultRenderable)
         }
         return defaultRenderable
       }

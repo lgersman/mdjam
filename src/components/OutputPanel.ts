@@ -46,10 +46,12 @@ export class OutputPanel extends ScrollBoxRenderable {
         return
       }
 
-      this.add(new TextRenderable(this.renderCtx, {
+      const lineNode = new TextRenderable(this.renderCtx, {
         content: line,
         flexShrink: 0,
-      }))
+      })
+      lineNode.selectable = true
+      this.add(lineNode)
     }
 
     if (lines.length > 0) {

@@ -96,7 +96,7 @@ export class InputRow extends BoxRenderable {
     // Watch store for upstream changes to this key
     this.stateStore.on('change', (key: string, value: string, sourceBlock: string | null) => {
       if (key === options.name) {
-        this.updateValue(value, sourceBlock ? `block:${sourceBlock}` : 'setup')
+        this.updateValue(value, sourceBlock ? `block:${sourceBlock}` : null)
       }
     })
   }
@@ -115,19 +115,19 @@ export class InputRow extends BoxRenderable {
     return this.currentValue.length > 0
   }
 
-  private updateValue(value: string, source: string): void {
+  private updateValue(value: string, source: string | null): void {
     if (this.valueInput) {
       this.valueInput.value = value
     } else if (this.valueDisplay) {
       this.valueDisplay.content = value
     }
-    this.sourceLabel.content = ` [${source}]`
+    this.sourceLabel.content = source ? ` [${source}]` : ''
   }
 
   private resolveSource(name: string): string | null {
     const entry = this.stateStore.getEntry(name)
     if (!entry) return null
-    if (entry.sourceBlock === null) return 'setup'
+    if (entry.sourceBlock === null) return null
     return `block:${entry.sourceBlock}`
   }
 }

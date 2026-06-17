@@ -11,6 +11,7 @@ import {
   type RenderContext,
   type RenderNodeContext,
 } from '@opentui/core'
+import type { PasteEvent } from '@opentui/core/lib/KeyHandler.js'
 import type { Token, Tokens } from 'marked'
 import { readFileSync, watch } from 'node:fs'
 import yaml from 'js-yaml'
@@ -46,6 +47,8 @@ export async function runApp(options: AppOptions): Promise<void> {
     exitOnCtrlC: false,
     exitSignals: [],
     autoFocus: true,
+    useMouse: true,
+    useKittyKeyboard: {},
   })
 
   const syntaxStyle = createSyntaxStyle(options.theme)
@@ -66,6 +69,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     scrollX: false,
   })
   scrollBox.verticalScrollBar.visible = false
+  scrollBox.selectable = true
   rootBox.add(scrollBox)
 
   // State side panel (overlay)
@@ -419,8 +423,30 @@ export async function runApp(options: AppOptions): Promise<void> {
   }
 
   // Global keyboard handler
+  renderer.keyInput.on('paste', (event: PasteEvent) => {
+    const focused = renderer.currentFocusedRenderable
+    if (!(focused instanceof InputRenderable)) {
+      const text = new TextDecoder().decode(event.bytes)
+      if (text.trim()) {
+        bottomStatusBar.flash('Focus an input to paste  [Tab] to navigate')
+      }
+    }
+  })
+
   renderer.keyInput.on('keypress', async (key) => {
-    if (key.name === 'c' && key.ctrl) {
+    if (key.name === 'c' && key.ctrl && key.shift) {
+      key.stopPropagation()
+      if (renderer.hasSelection) {
+        const text = renderer.getSelection()!.getSelectedText()
+        if (text.trim()) {
+          renderer.copyToClipboardOSC52(text)
+          bottomStatusBar.flash('Copied to clipboard')
+        }
+      }
+      return
+    }
+
+    if (key.name === 'c' && key.ctrl && !key.shift) {
       await quit()
       return
     }

@@ -14,6 +14,8 @@ const HOTKEYS: { key: string; description: string }[] = [
   { key: 'b / PgUp',      description: 'Page up' },
   { key: 'g',             description: 'Scroll to top' },
   { key: 'G',             description: 'Scroll to bottom' },
+  { key: 'Ctrl+Shift+C',  description: 'Copy selected text to clipboard' },
+  { key: 'Ctrl+Shift+V',  description: 'Paste into focused input' },
   { key: 'Ctrl+C',        description: 'Quit' },
 ]
 

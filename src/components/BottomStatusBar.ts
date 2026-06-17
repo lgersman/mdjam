@@ -7,7 +7,7 @@ const STATUS_MAP: Record<BlockStatus, { icon: string; fg: string; label: string 
   success:      { icon: '✓', fg: '#3fb950', label: 'Done' },
   failed:       { icon: '✗', fg: '#f85149', label: 'Failed' },
   cancelled:    { icon: '◌', fg: '#8b949e', label: 'Cancelled' },
-  blocked:      { icon: '✗', fg: '#f85149', label: 'Blocked' },
+  blocked:      { icon: '○', fg: '#8b949e', label: 'Blocked' },
   'dep-failed': { icon: '✗', fg: '#f85149', label: 'Skipped — dep failed' },
 }
 
@@ -20,6 +20,7 @@ export class BottomStatusBar extends BoxRenderable {
   private blockStatus: BlockStatus = 'idle'
   private exitCode: number | null = null
   private missingList: string[] = []
+  private flashTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(ctx: RenderContext) {
     super(ctx, {
@@ -44,6 +45,16 @@ export class BottomStatusBar extends BoxRenderable {
       flexShrink: 0,
     })
     this.add(this.rightText)
+  }
+
+  flash(message: string, durationMs = 2000): void {
+    if (this.flashTimer) clearTimeout(this.flashTimer)
+    this.leftText.content = message
+    ;(this.leftText as any).fg = '#3fb950'
+    this.flashTimer = setTimeout(() => {
+      this.flashTimer = null
+      this.refresh()
+    }, durationMs)
   }
 
   setContext(context: BarContext): void {
@@ -83,7 +94,7 @@ export class BottomStatusBar extends BoxRenderable {
     } else if (this.blockStatus === 'blocked' && this.missingList.length > 0) {
       label = `Blocked — missing: ${this.missingList.join(', ')}`
     }
-    this.leftText.content = `${info.icon} ${label}`
+    this.leftText.content = label
     ;(this.leftText as any).fg = info.fg
 
     if (this.context === 'block-input') {

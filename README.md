@@ -36,9 +36,11 @@ Options:
 | `Tab` / `Shift+Tab` | Focus next / previous executable block |
 | `Enter` | Execute focused block |
 | `Esc` | Cancel running block |
+| `Ctrl+Shift+C` | Copy selected text to clipboard |
+| `Ctrl+Shift+V` | Paste into focused input |
 | `r` | Reload document |
 | `s` | Toggle state store panel |
-| `q` | Quit (runs teardown script if declared) |
+| `Ctrl+C` | Quit (runs teardown script if declared) |
 
 ## Document format
 
@@ -143,13 +145,13 @@ Values written by a block with `id: my-block` are stored under both the bare key
 
 | Indicator | Meaning |
 |---|---|
-| `○ Ready` | Never run |
-| `✗ Blocked — missing: FOO` | A required input has no value yet |
-| `⟳ Running…` | Script is executing |
-| `✓ Done (exit 0)` | Succeeded |
-| `✗ Failed (exit 1)` | Exited non-zero |
-| `◌ Cancelled` | Cancelled with `Esc` |
-| `✗ Skipped — dep failed: <id>` | A dependency block failed |
+| `Ready` | Never run |
+| `Blocked — missing: FOO` | A required input has no value yet |
+| `Running…` | Script is executing |
+| `Done (exit 0)` | Succeeded |
+| `Failed (exit 1)` | Exited non-zero |
+| `Cancelled` | Cancelled with `Esc` |
+| `Skipped — dep failed: <id>` | A dependency block failed |
 
 ## Development
 

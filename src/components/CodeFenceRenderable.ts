@@ -64,11 +64,6 @@ export class CodeFenceRenderable extends BoxRenderable {
       } as any))
     }
 
-    // Cycle indicator
-    if (opts.metadata?.id && !opts.metadata.depends?.length) {
-      // No cycle check needed if no deps
-    }
-
     // Input panel (only if inputs declared)
     if (opts.metadata?.inputs && Object.keys(opts.metadata.inputs).length > 0) {
       this.inputPanel = new InputPanel(ctx, opts.metadata, opts.stateStore)
@@ -117,10 +112,6 @@ export class CodeFenceRenderable extends BoxRenderable {
         }
       })
     }
-  }
-
-  get hasOutput(): boolean {
-    return this.outputPanel.hasOutput
   }
 
   get hasScrollableOutput(): boolean {
@@ -187,18 +178,6 @@ export class CodeFenceRenderable extends BoxRenderable {
 
   get blockId(): string {
     return this._runner.blockId
-  }
-
-  get depends(): string[] {
-    return this.options.metadata?.depends ?? []
-  }
-
-  get script(): string {
-    return this.options.cleanBody
-  }
-
-  get metadata(): FenceMetadata | null {
-    return this.options.metadata
   }
 
   get isAutoExecute(): boolean {

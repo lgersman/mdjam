@@ -8,7 +8,6 @@ export class OutputPanel extends ScrollBoxRenderable {
   private readonly renderCtx: RenderContext
   private lineCount = 0
   private truncated = false
-  collapsed = false
 
   constructor(ctx: RenderContext, options: ScrollBoxOptions = {}) {
     super(ctx, {
@@ -60,10 +59,6 @@ export class OutputPanel extends ScrollBoxRenderable {
     }
   }
 
-  get hasOutput(): boolean {
-    return this.lineCount > 0
-  }
-
   get isScrollable(): boolean {
     return this.lineCount > SCROLL_THRESHOLD
   }
@@ -79,12 +74,4 @@ export class OutputPanel extends ScrollBoxRenderable {
     this.visible = false
   }
 
-  toggle(): void {
-    this.collapsed = !this.collapsed
-    if (!this.collapsed && this.lineCount > 0) {
-      this.visible = true
-    } else {
-      this.visible = this.collapsed ? false : this.lineCount > 0
-    }
-  }
 }

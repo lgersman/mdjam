@@ -1,14 +1,9 @@
-export interface FenceNode {
-  id: string
-  depends: string[]
-}
-
 export interface DependencyGraph {
   executionOrder: string[]
   cyclesByBlock: Map<string, string[]>
 }
 
-export function buildDependencyGraph(nodes: FenceNode[]): DependencyGraph {
+export function buildDependencyGraph(nodes: { id: string; depends: string[] }[]): DependencyGraph {
   const nodeMap = new Map(nodes.map(n => [n.id, n]))
   const visited = new Set<string>()
   const visiting = new Set<string>()

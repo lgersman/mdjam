@@ -74,12 +74,4 @@ export class ExecutionEngine {
     return success
   }
 
-  reset(): void {
-    this.successfulBlocks.clear()
-    this.failedBlocks.clear()
-  }
-
-  registerBlock(block: FenceBlock): void {
-    this.allBlocks.set(block.id, block)
-  }
 }

@@ -122,6 +122,10 @@ export class CodeFenceRenderable extends BoxRenderable {
     return this.outputPanel.hasOutput
   }
 
+  get hasScrollableOutput(): boolean {
+    return this.outputPanel.isScrollable
+  }
+
   scrollOutputBy(delta: number): void {
     this.outputPanel.scrollBy(delta)
   }

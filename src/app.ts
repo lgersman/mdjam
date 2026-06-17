@@ -401,12 +401,9 @@ export async function runApp(options: AppOptions): Promise<void> {
     for (const fence of fenceRenderables) {
       if (fence.isExecutionBlocked) continue
       const inputs = fence.inputRenderables
-      if (inputs.length > 0) {
-        for (const input of inputs) {
-          items.push({ kind: 'input', input, fence })
-        }
-      } else {
-        items.push({ kind: 'fence', fence })
+      items.push({ kind: 'fence', fence })
+      for (const input of inputs) {
+        items.push({ kind: 'input', input, fence })
       }
     }
     return items
@@ -519,7 +516,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       return
     }
 
-    const focusedFence = focused instanceof CodeFenceRenderable && focused.hasOutput ? focused : null
+    const focusedFence = focused instanceof CodeFenceRenderable && focused.hasScrollableOutput ? focused : null
 
     switch (key.name) {
       case 'h':

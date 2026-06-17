@@ -64,6 +64,10 @@ export class OutputPanel extends ScrollBoxRenderable {
     return this.lineCount > 0
   }
 
+  get isScrollable(): boolean {
+    return this.lineCount > SCROLL_THRESHOLD
+  }
+
   clear(): void {
     const children = [...this.getChildren()]
     for (const child of children) {

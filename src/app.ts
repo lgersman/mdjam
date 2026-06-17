@@ -366,6 +366,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       tableOptions: {
         style: 'grid',
         borderStyle: 'rounded',
+        outerBorder: false,
         cellPaddingX: 1,
       },
     })

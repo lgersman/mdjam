@@ -400,10 +400,14 @@ export async function runApp(options: AppOptions): Promise<void> {
 
     for (const fence of fenceRenderables) {
       if (fence.isExecutionBlocked) continue
+      if (fence.hasOnlyReadonlyInputs) continue
       const inputs = fence.inputRenderables
-      items.push({ kind: 'fence', fence })
-      for (const input of inputs) {
-        items.push({ kind: 'input', input, fence })
+      if (inputs.length > 0) {
+        for (const input of inputs) {
+          items.push({ kind: 'input', input, fence })
+        }
+      } else {
+        items.push({ kind: 'fence', fence })
       }
     }
     return items

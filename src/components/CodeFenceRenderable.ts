@@ -172,6 +172,10 @@ export class CodeFenceRenderable extends BoxRenderable {
     return this.inputPanel?.inputRenderables ?? []
   }
 
+  get hasOnlyReadonlyInputs(): boolean {
+    return this.inputPanel !== null && this.inputRenderables.length === 0
+  }
+
   get missingInputs(): string[] {
     return this.inputPanel?.missingInputs() ?? []
   }

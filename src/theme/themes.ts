@@ -1,104 +1,138 @@
 import { SyntaxStyle } from '@opentui/core'
 
-export type ThemeName = 'github-dark' | 'github-light' | 'dracula'
+export type ThemeName = 'dark' | 'light' | 'dracula' | 'tokyo-night'
 
-const GITHUB_DARK = {
-  // tree-sitter syntax tokens
-  keyword: { fg: '#ff7b72', bold: true },
-  string: { fg: '#a5d6ff' },
-  number: { fg: '#79c0ff' },
-  comment: { fg: '#8b949e', italic: true },
-  function: { fg: '#d2a8ff' },
-  variable: { fg: '#ffa657' },
-  type: { fg: '#79c0ff' },
-  operator: { fg: '#ff7b72' },
-  punctuation: { fg: '#c9d1d9' },
-  constant: { fg: '#79c0ff' },
-  property: { fg: '#ffa657' },
-  tag: { fg: '#7ee787' },
-  attribute: { fg: '#a5d6ff' },
-  'string.special': { fg: '#a5d6ff' },
-  plain: { fg: '#c9d1d9' },
-  conceal: { fg: '#8b949e' },
-  // markdown structural styles
-  default: { fg: '#c9d1d9' },
-  'markup.heading': { fg: '#58a6ff', bold: true },
-  'markup.strong': { fg: '#c9d1d9', bold: true },
-  'markup.italic': { fg: '#c9d1d9', italic: true },
-  'markup.strikethrough': { fg: '#8b949e' },
-  'markup.raw': { fg: '#ffa657' },
-  'markup.link': { fg: '#8b949e' },
-  'markup.link.label': { fg: '#58a6ff', underline: true },
-  'markup.link.url': { fg: '#8b949e' },
+// ANSI 256 → hex helpers (pre-computed for glamour's palette)
+// Colors sourced from github.com/charmbracelet/glamour styles/*.json
+
+const DARK = {
+  // tree-sitter syntax tokens (mapped from glamour dark chroma)
+  keyword:          { fg: '#00aaff' },
+  string:           { fg: '#c69669' },
+  number:           { fg: '#6eefc0' },
+  comment:          { fg: '#676767', italic: true },
+  function:         { fg: '#00d787' },
+  variable:         { fg: '#c4c4c4' },
+  type:             { fg: '#6e6ed8' },
+  operator:         { fg: '#ef8080' },
+  punctuation:      { fg: '#e8e8a8' },
+  constant:         { fg: '#c4c4c4' },
+  property:         { fg: '#7a7ae6' },
+  tag:              { fg: '#b083ea' },
+  attribute:        { fg: '#7a7ae6' },
+  'string.special': { fg: '#afffd7' },
+  plain:            { fg: '#c4c4c4' },
+  conceal:          { fg: '#676767' },
+  // markdown structural styles (mapped from glamour dark.json)
+  default:                { fg: '#d0d0d0' },
+  'markup.heading':       { fg: '#00afff', bold: true },
+  'markup.strong':        { fg: '#d0d0d0', bold: true },
+  'markup.italic':        { fg: '#d0d0d0', italic: true },
+  'markup.strikethrough': { fg: '#808080' },
+  'markup.raw':           { fg: '#ff5f5f' },
+  'markup.link':          { fg: '#008787' },
+  'markup.link.label':    { fg: '#00af5f', bold: true },
+  'markup.link.url':      { fg: '#008787' },
 }
 
-const GITHUB_LIGHT = {
-  // tree-sitter syntax tokens
-  keyword: { fg: '#cf222e', bold: true },
-  string: { fg: '#0a3069' },
-  number: { fg: '#0550ae' },
-  comment: { fg: '#6e7781', italic: true },
-  function: { fg: '#8250df' },
-  variable: { fg: '#953800' },
-  type: { fg: '#0550ae' },
-  operator: { fg: '#cf222e' },
-  punctuation: { fg: '#24292f' },
-  constant: { fg: '#0550ae' },
-  property: { fg: '#953800' },
-  tag: { fg: '#116329' },
-  attribute: { fg: '#0a3069' },
-  'string.special': { fg: '#0a3069' },
-  plain: { fg: '#24292f' },
-  conceal: { fg: '#6e7781' },
-  // markdown structural styles
-  default: { fg: '#24292f' },
-  'markup.heading': { fg: '#0550ae', bold: true },
-  'markup.strong': { fg: '#24292f', bold: true },
-  'markup.italic': { fg: '#24292f', italic: true },
-  'markup.strikethrough': { fg: '#6e7781' },
-  'markup.raw': { fg: '#953800' },
-  'markup.link': { fg: '#6e7781' },
-  'markup.link.label': { fg: '#0969da', underline: true },
-  'markup.link.url': { fg: '#6e7781' },
+const LIGHT = {
+  // tree-sitter syntax tokens (mapped from glamour light chroma)
+  keyword:          { fg: '#279efc' },
+  string:           { fg: '#7e5b38' },
+  number:           { fg: '#22ccae' },
+  comment:          { fg: '#8d8d8d', italic: true },
+  function:         { fg: '#019f57' },
+  variable:         { fg: '#2a2a2a' },
+  type:             { fg: '#7049c2' },
+  operator:         { fg: '#ff2626' },
+  punctuation:      { fg: '#fa7878' },
+  constant:         { fg: '#581290' },
+  property:         { fg: '#8362cb' },
+  tag:              { fg: '#581290' },
+  attribute:        { fg: '#8362cb' },
+  'string.special': { fg: '#00aeae' },
+  plain:            { fg: '#2a2a2a' },
+  conceal:          { fg: '#8d8d8d' },
+  // markdown structural styles (mapped from glamour light.json)
+  default:                { fg: '#1c1c1c' },
+  'markup.heading':       { fg: '#005fff', bold: true },
+  'markup.strong':        { fg: '#1c1c1c', bold: true },
+  'markup.italic':        { fg: '#1c1c1c', italic: true },
+  'markup.strikethrough': { fg: '#8d8d8d' },
+  'markup.raw':           { fg: '#ff5f5f' },
+  'markup.link':          { fg: '#00af87' },
+  'markup.link.label':    { fg: '#00875f', bold: true },
+  'markup.link.url':      { fg: '#00af87' },
 }
 
 const DRACULA = {
-  // tree-sitter syntax tokens
-  keyword: { fg: '#ff79c6', bold: true },
-  string: { fg: '#f1fa8c' },
-  number: { fg: '#bd93f9' },
-  comment: { fg: '#6272a4', italic: true },
-  function: { fg: '#50fa7b' },
-  variable: { fg: '#ffb86c' },
-  type: { fg: '#8be9fd' },
-  operator: { fg: '#ff79c6' },
-  punctuation: { fg: '#f8f8f2' },
-  constant: { fg: '#bd93f9' },
-  property: { fg: '#ffb86c' },
-  tag: { fg: '#50fa7b' },
-  attribute: { fg: '#50fa7b' },
-  'string.special': { fg: '#f1fa8c' },
-  plain: { fg: '#f8f8f2' },
-  conceal: { fg: '#6272a4' },
-  // markdown structural styles
-  default: { fg: '#f8f8f2' },
-  'markup.heading': { fg: '#bd93f9', bold: true },
-  'markup.strong': { fg: '#f8f8f2', bold: true },
-  'markup.italic': { fg: '#f8f8f2', italic: true },
+  // tree-sitter syntax tokens (mapped from glamour dracula chroma)
+  keyword:          { fg: '#ff79c6' },
+  string:           { fg: '#f1fa8c' },
+  number:           { fg: '#6eefc0' },
+  comment:          { fg: '#6272a4', italic: true },
+  function:         { fg: '#50fa7b' },
+  variable:         { fg: '#8be9fd' },
+  type:             { fg: '#8be9fd' },
+  operator:         { fg: '#ff79c6' },
+  punctuation:      { fg: '#f8f8f2' },
+  constant:         { fg: '#bd93f9' },
+  property:         { fg: '#50fa7b' },
+  tag:              { fg: '#ff79c6' },
+  attribute:        { fg: '#50fa7b' },
+  'string.special': { fg: '#ff79c6' },
+  plain:            { fg: '#f8f8f2' },
+  conceal:          { fg: '#6272a4' },
+  // markdown structural styles (mapped from glamour dracula.json)
+  default:                { fg: '#f8f8f2' },
+  'markup.heading':       { fg: '#bd93f9', bold: true },
+  'markup.strong':        { fg: '#ffb86c', bold: true },
+  'markup.italic':        { fg: '#f1fa8c', italic: true },
   'markup.strikethrough': { fg: '#6272a4' },
-  'markup.raw': { fg: '#50fa7b' },
-  'markup.link': { fg: '#6272a4' },
-  'markup.link.label': { fg: '#8be9fd', underline: true },
-  'markup.link.url': { fg: '#6272a4' },
+  'markup.raw':           { fg: '#50fa7b' },
+  'markup.link':          { fg: '#8be9fd', underline: true },
+  'markup.link.label':    { fg: '#ff79c6' },
+  'markup.link.url':      { fg: '#8be9fd' },
 }
 
-const THEMES: Record<ThemeName, Record<string, { fg?: string; bold?: boolean; italic?: boolean }>> = {
-  'github-dark': GITHUB_DARK,
-  'github-light': GITHUB_LIGHT,
-  dracula: DRACULA,
+const TOKYO_NIGHT = {
+  // tree-sitter syntax tokens (mapped from glamour tokyo-night chroma)
+  keyword:          { fg: '#2ac3de' },
+  string:           { fg: '#e0af68' },
+  number:           { fg: '#a9b1d6' },
+  comment:          { fg: '#565f89', italic: true },
+  function:         { fg: '#9ece6a' },
+  variable:         { fg: '#7aa2f7' },
+  type:             { fg: '#7aa2f7' },
+  operator:         { fg: '#2ac3de' },
+  punctuation:      { fg: '#a9b1d6' },
+  constant:         { fg: '#bb9af7' },
+  property:         { fg: '#9ece6a' },
+  tag:              { fg: '#2ac3de' },
+  attribute:        { fg: '#9ece6a' },
+  'string.special': { fg: '#2ac3de' },
+  plain:            { fg: '#a9b1d6' },
+  conceal:          { fg: '#565f89' },
+  // markdown structural styles (mapped from glamour tokyo-night.json)
+  default:                { fg: '#a9b1d6' },
+  'markup.heading':       { fg: '#bb9af7', bold: true },
+  'markup.strong':        { fg: '#a9b1d6', bold: true },
+  'markup.italic':        { fg: '#a9b1d6', italic: true },
+  'markup.strikethrough': { fg: '#565f89' },
+  'markup.raw':           { fg: '#9ece6a' },
+  'markup.link':          { fg: '#7aa2f7', underline: true },
+  'markup.link.label':    { fg: '#2ac3de' },
+  'markup.link.url':      { fg: '#7aa2f7' },
+}
+
+const THEMES: Record<ThemeName, Record<string, { fg?: string; bold?: boolean; italic?: boolean; underline?: boolean }>> = {
+  dark:          DARK,
+  light:         LIGHT,
+  dracula:       DRACULA,
+  'tokyo-night': TOKYO_NIGHT,
 }
 
 export function createSyntaxStyle(theme: ThemeName): SyntaxStyle {
-  const styles = THEMES[theme] ?? GITHUB_DARK
+  const styles = THEMES[theme] ?? DARK
   return SyntaxStyle.fromStyles(styles)
 }

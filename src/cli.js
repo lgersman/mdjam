@@ -17,7 +17,7 @@ Arguments:
 Options:
   --no-auto          Suppress auto-execution of auto:true blocks
   --no-watch         Disable watch mode (default: enabled)
-  --theme <name>     Syntax theme: github-dark | github-light | dracula  (default: github-dark)
+  --theme <name>     Syntax theme: dark | light | dracula | tokyo-night  (default: dark)
   --verbose          Show document frontmatter as a header
   --version          Show version
   --help             Show this help
@@ -32,7 +32,7 @@ var { values, positionals } = parseArgs({
   options: {
     auto: { type: "boolean", default: true },
     watch: { type: "boolean", default: true },
-    theme: { type: "string", default: "github-dark" },
+    theme: { type: "string", default: "dark" },
     verbose: { type: "boolean", default: false },
     version: { type: "boolean", default: false },
     help: { type: "boolean", default: false }
@@ -58,10 +58,10 @@ if (!existsSync(filePath)) {
 `);
   process.exit(1);
 }
-var theme = values.theme ?? "github-dark";
-var validThemes = ["github-dark", "github-light", "dracula"];
+var theme = values.theme ?? "dark";
+var validThemes = ["dark", "light", "dracula", "tokyo-night"];
 if (!validThemes.includes(theme)) {
-  process.stderr.write(`Error: Unknown theme '${theme}'. Valid themes: ${validThemes.join(", ")}
+  process.stderr.write(`Error: Unknown theme '${theme}'. Valid themes: ${validThemes.join(" | ")}
 `);
   process.exit(1);
 }
@@ -73,5 +73,5 @@ await runApp({
   verbose: values.verbose ?? false
 });
 
-//# debugId=E880DE43981942FB64756E2164756E21
+//# debugId=CE4BE7EF7E5DEBCE64756E2164756E21
 //# sourceMappingURL=cli.js.map

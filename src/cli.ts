@@ -17,7 +17,7 @@ Arguments:
 Options:
   --no-auto          Suppress auto-execution of auto:true blocks
   --no-watch         Disable watch mode (default: enabled)
-  --theme <name>     Syntax theme: github-dark | github-light | dracula  (default: github-dark)
+  --theme <name>     Syntax theme: dark | light | dracula | tokyo-night  (default: dark)
   --verbose          Show document frontmatter as a header
   --version          Show version
   --help             Show this help
@@ -34,7 +34,7 @@ const { values, positionals } = parseArgs({
   options: {
     auto:    { type: 'boolean', default: true },
     watch:   { type: 'boolean', default: true },
-    theme:   { type: 'string',  default: 'github-dark' },
+    theme:   { type: 'string',  default: 'dark' },
     verbose: { type: 'boolean', default: false },
     version: { type: 'boolean', default: false },
     help:    { type: 'boolean', default: false },
@@ -63,10 +63,10 @@ if (!existsSync(filePath)) {
   process.exit(1)
 }
 
-const theme = (values.theme ?? 'github-dark') as ThemeName
-const validThemes: ThemeName[] = ['github-dark', 'github-light', 'dracula']
+const theme = (values.theme ?? 'dark') as ThemeName
+const validThemes: ThemeName[] = ['dark', 'light', 'dracula', 'tokyo-night']
 if (!validThemes.includes(theme)) {
-  process.stderr.write(`Error: Unknown theme '${theme}'. Valid themes: ${validThemes.join(', ')}\n`)
+  process.stderr.write(`Error: Unknown theme '${theme}'. Valid themes: ${validThemes.join(' | ')}\n`)
   process.exit(1)
 }
 

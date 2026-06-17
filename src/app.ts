@@ -290,6 +290,18 @@ export async function runApp(options: AppOptions): Promise<void> {
       sh: bashRenderer,
     })
 
+    const patchListBullets = (box: BoxRenderable): void => {
+      for (const child of box.getChildren()) {
+        if (!(child instanceof BoxRenderable)) continue
+        const rowChildren = child.getChildren()
+        const marker = rowChildren[0]
+        if (marker instanceof TextRenderable && marker.chunks[0]?.text === '- ') {
+          marker.content = '• '
+        }
+        patchListBullets(child)
+      }
+    }
+
     const renderNode = (token: Token, context: RenderNodeContext) => {
       if (token.type === 'heading') {
         const h = token as Tokens.Heading
@@ -302,6 +314,13 @@ export async function runApp(options: AppOptions): Promise<void> {
           width: '100%',
         } as any)
       }
+      if (token.type === 'list' && !(token as Tokens.List).ordered) {
+        const defaultRenderable = context.defaultRender()
+        if (defaultRenderable instanceof BoxRenderable) {
+          patchListBullets(defaultRenderable)
+        }
+        return defaultRenderable
+      }
       return codeBlockRenderer(token, context)
     }
 
@@ -312,6 +331,11 @@ export async function runApp(options: AppOptions): Promise<void> {
       conceal: true,
       flexShrink: 0,
       width: '100%',
+      tableOptions: {
+        style: 'grid',
+        borderStyle: 'rounded',
+        cellPaddingX: 1,
+      },
     })
 
     scrollBox.content.add(currentMarkdown)

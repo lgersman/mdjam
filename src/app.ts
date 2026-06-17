@@ -267,7 +267,11 @@ export async function runApp(options: AppOptions): Promise<void> {
           }
           allBlocks.set(blockId, block)
           if (executionEngine) {
-            await executionEngine.execute(block)
+            if (metadata?.interactive) {
+              await executionEngine.executeInteractive(block, () => renderer.suspend(), () => renderer.resume())
+            } else {
+              await executionEngine.execute(block)
+            }
           }
         },
       })
@@ -371,7 +375,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     // Auto-execute blocks with auto: true
     if (!options.noAuto && !executionBlocked) {
       for (const fence of fenceRenderables) {
-        if (fence.isAutoExecute) {
+        if (fence.isAutoExecute && !fence.isInteractive) {
           const block = allBlocks.get(fence.blockId)
           if (block && executionEngine) {
             executionEngine.execute(block).catch(() => {})

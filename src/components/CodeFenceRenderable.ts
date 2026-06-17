@@ -184,6 +184,10 @@ export class CodeFenceRenderable extends BoxRenderable {
     return this.options.metadata?.auto === true
   }
 
+  get isInteractive(): boolean {
+    return this.options.metadata?.interactive === true
+  }
+
   get isExecutionBlocked(): boolean {
     return this.options.executionBlocked
   }

@@ -10,6 +10,7 @@ export interface FenceMetadata {
   id?: string
   description?: string
   auto?: boolean
+  interactive?: boolean
   inputs?: Record<string, InputSpec>
   outputs?: string[]
   depends?: string[]

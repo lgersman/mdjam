@@ -22,13 +22,28 @@ export class ExecutionEngine {
 
   /** Execute a block, first resolving and running any unrun dependencies. */
   async execute(target: FenceBlock): Promise<boolean> {
-    // Reject if block is in a cycle
-    if (this.graph.cyclesByBlock.has(target.id)) {
-      return false
-    }
+    if (!await this.resolveDeps(target)) return false
+    return this.runBlock(target)
+  }
 
-    // Always re-run the target even if it ran before; dependencies that
-    // already succeeded are still skipped via the successfulBlocks check below.
+  /** Like execute(), but runs the target block in a PTY interactive session. */
+  async executeInteractive(
+    target: FenceBlock,
+    suspend: () => void,
+    resume: () => void,
+  ): Promise<boolean> {
+    if (!await this.resolveDeps(target)) return false
+
+    const exitCode = await target.runner.runInteractive(target.script, suspend, resume)
+    const success = exitCode === 0
+    if (success) this.successfulBlocks.add(target.id)
+    else this.failedBlocks.add(target.id)
+    return success
+  }
+
+  private async resolveDeps(target: FenceBlock): Promise<boolean> {
+    if (this.graph.cyclesByBlock.has(target.id)) return false
+
     this.successfulBlocks.delete(target.id)
     this.failedBlocks.delete(target.id)
 
@@ -39,16 +54,13 @@ export class ExecutionEngine {
 
     for (const id of execOrder) {
       if (id === target.id) continue
-
       if (this.failedBlocks.has(id)) {
         target.runner.emit('status', 'dep-failed')
         return false
       }
-
       if (!this.successfulBlocks.has(id)) {
         const dep = this.allBlocks.get(id)
         if (!dep) continue
-
         const ok = await this.runBlock(dep)
         if (!ok) {
           target.runner.emit('status', 'dep-failed')
@@ -56,8 +68,7 @@ export class ExecutionEngine {
         }
       }
     }
-
-    return this.runBlock(target)
+    return true
   }
 
   private async runBlock(block: FenceBlock): Promise<boolean> {

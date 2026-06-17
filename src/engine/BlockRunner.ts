@@ -1,9 +1,28 @@
 import { spawn } from 'node:child_process'
-import { readFileSync, unlinkSync } from 'node:fs'
+import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { EventEmitter } from 'node:events'
 import type { StateStore } from './StateStore.js'
+
+// Strip ANSI then resolve \r overwrite semantics to get visible lines.
+// A bare \r in a PTY record means "cursor to col 0" (overwrites previous text).
+// Splitting by \r and taking the last segment gives what the terminal would show.
+function terminalLines(raw: string): string[] {
+  const stripped = raw
+    .replace(/\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]/g, '') // CSI sequences
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')          // OSC sequences
+    .replace(/\x1b[\x20-\x2f]?[\x30-\x7e]/g, '')                // 2-char escapes
+    .replace(/\x1b/g, '')                                        // stray ESC
+  // Split on \n, then within each visual line take only the text after the last \r.
+  // PTY lines end with \r\n; after splitting on \n the trailing \r is a line-ending
+  // artifact, not an overwrite — strip it before handling mid-line \r overwrites.
+  return stripped.split('\n').map(line => {
+    const trimmed = line.endsWith('\r') ? line.slice(0, -1) : line
+    const parts = trimmed.split('\r')
+    return parts[parts.length - 1] ?? ''
+  })
+}
 
 export type BlockStatus =
   | 'idle'
@@ -55,31 +74,16 @@ export class BlockRunner extends EventEmitter {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
-    const processOutputLine = (line: string, isStderr: boolean): void => {
-      if (!isStderr) {
-        const m = line.match(SET_OUTPUT_RE)
-        if (m) {
-          const [, key, value] = m
-          // Write bare key + namespaced key to state store
-          this.stateStore.set(key, value, this.blockId)
-          this.stateStore.set(`${this.blockId}.${key}`, value, this.blockId)
-          this.emit('setOutput', key, value)
-          return
-        }
-      }
-      this.emit('output', line + '\n')
-    }
-
     const pipeStream = (stream: NodeJS.ReadableStream, isStderr: boolean): void => {
       let buf = ''
       stream.on('data', (chunk: Buffer) => {
         buf += chunk.toString()
         const lines = buf.split('\n')
         buf = lines.pop() ?? ''
-        for (const line of lines) processOutputLine(line, isStderr)
+        for (const line of lines) this.processOutputLine(line, isStderr)
       })
       stream.on('end', () => {
-        if (buf.length > 0) processOutputLine(buf, isStderr)
+        if (buf.length > 0) this.processOutputLine(buf, isStderr)
       })
     }
 
@@ -110,6 +114,77 @@ export class BlockRunner extends EventEmitter {
     })
   }
 
+  async runInteractive(
+    script: string,
+    suspend: () => void,
+    resume: () => void,
+  ): Promise<number> {
+    this.cancelInternal()
+    this.setStatus('running')
+
+    const prefix = `mdrun_${this.blockId.replace(/[^a-z0-9]/gi, '_')}_${process.pid}`
+    const captureFile = join(tmpdir(), `${prefix}.env`)
+    const scriptFile  = join(tmpdir(), `${prefix}.sh`)
+    const recordFile  = join(tmpdir(), `${prefix}.rec`)
+
+    const wrappedScript = [
+      `_MDRUN_CAP="${captureFile}"`,
+      `trap 'export -p > "$_MDRUN_CAP" 2>/dev/null || true' EXIT`,
+      script,
+    ].join('\n')
+
+    writeFileSync(scriptFile, wrappedScript, { mode: 0o700 })
+
+    const initialEnv: Record<string, string | undefined> = { ...process.env }
+    const env: Record<string, string | undefined> = {
+      ...initialEnv,
+      ...this.stateStore.toEnv(),
+    }
+
+    suspend()
+
+    // `script -q -e` creates a PTY for the child, records its output,
+    // and exits with the child's exit code (-e / --return, util-linux ≥2.26).
+    // stdio: 'inherit' hands the real TTY fds to `script` so the user can interact.
+    this.proc = spawn('script', ['-q', '-e', '-c', `bash "${scriptFile}"`, recordFile], {
+      env: env as NodeJS.ProcessEnv,
+      stdio: 'inherit',
+    })
+
+    return new Promise<number>((resolve) => {
+      this.proc!.on('close', (code, signal) => {
+        this.proc = null
+        resume()
+
+        let rawOutput = ''
+        try { rawOutput = readFileSync(recordFile, 'utf8') } catch {}
+
+        for (const line of terminalLines(rawOutput)) {
+          // Filter `script` header/footer lines that appear in the record file
+          if (!line.length || line.startsWith('Script started') || line.startsWith('Script done')) continue
+          this.processOutputLine(line, false)
+        }
+
+        try {
+          const capturedEnv = readFileSync(captureFile, 'utf8')
+          this.captureExports(capturedEnv, initialEnv)
+        } catch {}
+
+        for (const f of [scriptFile, recordFile, captureFile]) {
+          try { unlinkSync(f) } catch {}
+        }
+
+        const exitCode = code ?? (signal ? 1 : 0)
+        if (this.status !== 'cancelled') {
+          this.exitCode = exitCode
+          this.setStatus(exitCode === 0 ? 'success' : 'failed', exitCode)
+        }
+        this.emit('done', exitCode)
+        resolve(exitCode)
+      })
+    })
+  }
+
   cancel(): void {
     this.cancelInternal()
   }
@@ -123,6 +198,20 @@ export class BlockRunner extends EventEmitter {
     setTimeout(() => {
       try { proc.kill('SIGKILL') } catch {}
     }, 3000)
+  }
+
+  private processOutputLine(line: string, isStderr: boolean): void {
+    if (!isStderr) {
+      const m = line.match(SET_OUTPUT_RE)
+      if (m) {
+        const [, key, value] = m
+        this.stateStore.set(key, value, this.blockId)
+        this.stateStore.set(`${this.blockId}.${key}`, value, this.blockId)
+        this.emit('setOutput', key, value)
+        return
+      }
+    }
+    this.emit('output', line + '\n')
   }
 
   private captureExports(

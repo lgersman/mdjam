@@ -1,8 +1,8 @@
 diff --git a/index.js b/index.js
-index 972407d4b06edfdb94fd583a04327b9aa738a43e..a2c80f00b21b0de85370bbdb5e868a6e8cbcbda8 100644
+index 1ec69d5280f0b0c4268e5b8ebb57f5609245eff8..93aa4c93bff16af1052cbc01758d4f9e10a3f5bb 100644
 --- a/index.js
 +++ b/index.js
-@@ -6772,6 +6772,7 @@ var MEASURE_HEIGHT = 1e4;
+@@ -6773,6 +6773,7 @@ var MEASURE_HEIGHT = 1e4;
  
  class TextTableRenderable extends Renderable {
    _content;
@@ -10,7 +10,7 @@ index 972407d4b06edfdb94fd583a04327b9aa738a43e..a2c80f00b21b0de85370bbdb5e868a6e
    _wrapMode;
    _columnWidthMode;
    _columnFitter;
-@@ -7185,6 +7186,10 @@ class TextTableRenderable extends Renderable {
+@@ -7186,6 +7187,10 @@ class TextTableRenderable extends Renderable {
      this._rowCount = newRowCount;
      this._columnCount = newColumnCount;
    }
@@ -21,7 +21,7 @@ index 972407d4b06edfdb94fd583a04327b9aa738a43e..a2c80f00b21b0de85370bbdb5e868a6e
    createCell(content) {
      const styledText = this.toStyledText(content);
      const textBuffer = TextBuffer.create(this._ctx.widthMethod);
-@@ -7549,7 +7554,16 @@ class TextTableRenderable extends Renderable {
+@@ -7550,7 +7555,16 @@ class TextTableRenderable extends Renderable {
          const cell = this._cells[rowIdx]?.[colIdx];
          if (!cell)
            continue;
@@ -39,7 +39,7 @@ index 972407d4b06edfdb94fd583a04327b9aa738a43e..a2c80f00b21b0de85370bbdb5e868a6e
        }
      }
    }
-@@ -8766,7 +8780,8 @@ class MarkdownRenderable extends Renderable {
+@@ -8767,7 +8781,8 @@ class MarkdownRenderable extends Renderable {
      return {
        cache: {
          content,
@@ -49,7 +49,7 @@ index 972407d4b06edfdb94fd583a04327b9aa738a43e..a2c80f00b21b0de85370bbdb5e868a6e
        },
        changed
      };
-@@ -8831,9 +8846,9 @@ class MarkdownRenderable extends Renderable {
+@@ -8832,9 +8847,9 @@ class MarkdownRenderable extends Renderable {
        this.requestRender();
      }
    }
@@ -61,7 +61,7 @@ index 972407d4b06edfdb94fd583a04327b9aa738a43e..a2c80f00b21b0de85370bbdb5e868a6e
        id,
        content,
        width: "100%",
-@@ -8852,6 +8867,8 @@ class MarkdownRenderable extends Renderable {
+@@ -8853,6 +8868,8 @@ class MarkdownRenderable extends Renderable {
        borderColor: options.borderColor,
        selectable: options.selectable
      });
@@ -70,7 +70,7 @@ index 972407d4b06edfdb94fd583a04327b9aa738a43e..a2c80f00b21b0de85370bbdb5e868a6e
    }
    createTableBlock(table, id, marginBottom = 0, previousCache, forceRegenerate = false) {
      const { cache } = this.buildTableContentCache(table, previousCache, forceRegenerate);
-@@ -8861,7 +8878,7 @@ class MarkdownRenderable extends Renderable {
+@@ -8862,7 +8879,7 @@ class MarkdownRenderable extends Renderable {
        };
      }
      return {
@@ -79,7 +79,7 @@ index 972407d4b06edfdb94fd583a04327b9aa738a43e..a2c80f00b21b0de85370bbdb5e868a6e
        tableContentCache: cache
      };
    }
-@@ -9061,13 +9078,14 @@ class MarkdownRenderable extends Renderable {
+@@ -9062,13 +9079,14 @@ class MarkdownRenderable extends Renderable {
          if (changed) {
            state.renderable.content = cache.content;
          }
@@ -95,7 +95,7 @@ index 972407d4b06edfdb94fd583a04327b9aa738a43e..a2c80f00b21b0de85370bbdb5e868a6e
        this.add(tableRenderable, index);
        state.renderable = tableRenderable;
        state.tableContentCache = cache;
-@@ -9351,13 +9369,14 @@ class MarkdownRenderable extends Renderable {
+@@ -9352,13 +9370,14 @@ class MarkdownRenderable extends Renderable {
          }
          if (state.renderable instanceof TextTableRenderable) {
            state.renderable.content = cache.content;

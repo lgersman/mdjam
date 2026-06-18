@@ -22,8 +22,9 @@ export interface ParsedFence {
   parseError?: string
 }
 
-// Matches a leading # --- ... # --- comment block
-const METADATA_BLOCK_RE = /^# ---\n((?:#[^\n]*\n)*)# ---\n/
+// Matches a leading # --- ... # --- comment block; trailing \n after closing --- is optional
+// (marked strips the trailing newline from token.text when no code follows the metadata)
+const METADATA_BLOCK_RE = /^# ---\n((?:#[^\n]*\n)*)# ---\n?/
 
 export function parseFenceMetadata(fenceBody: string): ParsedFence {
   const match = fenceBody.match(METADATA_BLOCK_RE)

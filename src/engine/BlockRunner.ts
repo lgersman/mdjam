@@ -56,10 +56,17 @@ export class BlockRunner extends EventEmitter {
 
     const captureFile = join(tmpdir(), `mdrun_${this.blockId.replace(/[^a-z0-9]/gi, '_')}_${process.pid}.env`)
 
-    // Wrap script: always capture exports on exit via trap
+    // Wrap script: capture exports on exit + intercept ::set-output so the value
+    // is also available to subsequent lines in the same block via MDFENCE_*.
     const wrappedScript = [
       `_MDRUN_CAP="${captureFile}"`,
       `trap 'export -p > "$_MDRUN_CAP" 2>/dev/null || true' EXIT`,
+      `function echo() {`,
+      `  command echo "$@"`,
+      `  if [[ "$*" =~ ^'::set-output name='([^:]+)'::'(.*) ]]; then`,
+      `    export "MDFENCE_\${BASH_REMATCH[1]^^}=\${BASH_REMATCH[2]}"`,
+      `  fi`,
+      `}`,
       script,
     ].join('\n')
 
@@ -130,6 +137,12 @@ export class BlockRunner extends EventEmitter {
     const wrappedScript = [
       `_MDRUN_CAP="${captureFile}"`,
       `trap 'export -p > "$_MDRUN_CAP" 2>/dev/null || true' EXIT`,
+      `function echo() {`,
+      `  command echo "$@"`,
+      `  if [[ "$*" =~ ^'::set-output name='([^:]+)'::'(.*) ]]; then`,
+      `    export "MDFENCE_\${BASH_REMATCH[1]^^}=\${BASH_REMATCH[2]}"`,
+      `  fi`,
+      `}`,
       script,
     ].join('\n')
 

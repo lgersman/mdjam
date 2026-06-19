@@ -1,4 +1,4 @@
-import { BoxRenderable, TextRenderable, type RenderContext } from '@opentui/core'
+import { BoxRenderable, TextRenderable, createTextAttributes, type RenderContext } from '@opentui/core'
 import type { PrerequisiteResult } from '../engine/Prerequisites.js'
 import { DANGER, WARNING } from '../theme/colors.js'
 
@@ -15,9 +15,9 @@ export class PrerequisitePanel extends BoxRenderable {
     this.add(new TextRenderable(ctx, {
       content: '  Prerequisites failed — code fence execution is disabled',
       fg: DANGER,
-      bold: true,
+      attributes: createTextAttributes({ bold: true }),
       flexShrink: 0,
-    } as any))
+    }))
 
     for (const msg of result.failed) {
       this.add(new TextRenderable(ctx, {

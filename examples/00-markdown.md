@@ -1,5 +1,5 @@
 ---
-title: Markdown — rendering showcase
+description: Markdown — rendering showcase
 ---
 
 # Markdown rendering showcase

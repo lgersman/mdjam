@@ -1,5 +1,5 @@
 ---
-title: Pipeline — block dependencies
+description: Pipeline — block dependencies
 ---
 
 # Pipeline

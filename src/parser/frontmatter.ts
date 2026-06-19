@@ -6,7 +6,7 @@ export interface Prerequisites {
 }
 
 export interface DocumentFrontmatter {
-  title?: string
+  description?: string
   prerequisites?: Prerequisites
   setup?: string
   teardown?: string

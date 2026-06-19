@@ -3,6 +3,7 @@ import {
   TextRenderable,
   CodeRenderable,
   InputRenderable,
+  createTextAttributes,
   type RenderContext,
   type KeyEvent,
 } from '@opentui/core'
@@ -57,11 +58,11 @@ export class CodeFenceRenderable extends BoxRenderable {
       }))
     } else if (opts.metadata?.description) {
       this.add(new TextRenderable(ctx, {
-        content: `  ${opts.metadata.description}`,
+        content: opts.metadata.description,
         fg: FG_MUTED,
-        italic: true,
+        attributes: createTextAttributes({ italic: true }),
         flexShrink: 0,
-      } as any))
+      }))
     }
 
     // Input panel (only if inputs declared)

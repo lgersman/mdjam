@@ -1,4 +1,4 @@
-import { BoxRenderable, TextRenderable, type RenderContext } from '@opentui/core'
+import { BoxRenderable, TextRenderable, createTextAttributes, type RenderContext } from '@opentui/core'
 import type { StateStore } from '../engine/StateStore.js'
 import { BG_BASE, BORDER_DEFAULT, FG_DEFAULT, FG_SUBTLE, ACCENT_SUBTLE } from '../theme/colors.js'
 
@@ -28,10 +28,10 @@ export class StateSidePanel extends BoxRenderable {
     this.add(new TextRenderable(ctx, {
       content: ' State Store  [s] to close',
       fg: FG_DEFAULT,
-      bold: true,
+      attributes: createTextAttributes({ bold: true }),
       flexShrink: 0,
       paddingBottom: 1,
-    } as any))
+    }))
 
     this.contentBox = new BoxRenderable(ctx, {
       flexDirection: 'column',

@@ -1,4 +1,4 @@
-import { BoxRenderable, TextRenderable, TextTableRenderable, fg, type RenderContext } from '@opentui/core'
+import { BoxRenderable, TextRenderable, TextTableRenderable, fg, createTextAttributes, type RenderContext } from '@opentui/core'
 import { BG_BASE, ACCENT, FG_DEFAULT, ATTENTION } from '../theme/colors.js'
 
 const HOTKEYS: { key: string; description: string }[] = [
@@ -39,7 +39,7 @@ export class HelpPanel extends BoxRenderable {
     this.add(new TextRenderable(ctx, {
       content: '  Keyboard shortcuts  [h] or [Esc] to close',
       fg: ACCENT,
-      bold: true,
+      attributes: createTextAttributes({ bold: true }),
       flexShrink: 0,
       paddingTop: 1,
       paddingBottom: 1,

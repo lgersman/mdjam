@@ -3,11 +3,12 @@ import {
   TextRenderable,
   InputRenderable,
   InputRenderableEvents,
+  createTextAttributes,
   type RenderContext,
 } from '@opentui/core'
 import type { InputSpec } from '../parser/metadata.js'
 import type { StateStore } from '../engine/StateStore.js'
-import { FG_MUTED, FG_SUBTLE, ACCENT_SUBTLE, FG_INPUT } from '../theme/colors.js'
+import { FG_MUTED, FG_SUBTLE, ACCENT_SUBTLE, FG_INPUT, WARNING } from '../theme/colors.js'
 
 export interface InputRowOptions {
   name: string
@@ -27,7 +28,7 @@ export class InputRow extends BoxRenderable {
     super(ctx, {
       flexDirection: 'row',
       flexShrink: 0,
-      paddingLeft: 2,
+      paddingLeft: 0,
       marginBottom: 0,
     })
 
@@ -37,7 +38,7 @@ export class InputRow extends BoxRenderable {
 
     // Name label
     this.add(new TextRenderable(ctx, {
-      content: `  ${options.name}: `,
+      content: `${options.name}: `,
       fg: FG_MUTED,
       flexShrink: 0,
     }))
@@ -51,9 +52,11 @@ export class InputRow extends BoxRenderable {
     const source = this.resolveSource(options.name)
 
     if (options.spec.readonly) {
+      const isEmpty = initial === ''
       this.valueDisplay = new TextRenderable(ctx, {
-        content: initial,
-        fg: ACCENT_SUBTLE,
+        content: isEmpty ? '(not yet defined)' : initial,
+        fg: isEmpty ? WARNING : ACCENT_SUBTLE,
+        attributes: isEmpty ? createTextAttributes({ italic: true }) : 0,
         flexGrow: 1,
       })
       this.add(this.valueDisplay)
@@ -89,8 +92,8 @@ export class InputRow extends BoxRenderable {
       desc.add(new TextRenderable(ctx, {
         content: options.spec.description,
         fg: FG_SUBTLE,
-        italic: true,
-      } as any))
+        attributes: createTextAttributes({ italic: true }),
+      }))
       this.add(desc)
     }
 
@@ -120,7 +123,15 @@ export class InputRow extends BoxRenderable {
     if (this.valueInput) {
       this.valueInput.value = value
     } else if (this.valueDisplay) {
-      this.valueDisplay.content = value
+      if (value) {
+        this.valueDisplay.content = value
+        this.valueDisplay.fg = ACCENT_SUBTLE
+        this.valueDisplay.attributes = 0
+      } else {
+        this.valueDisplay.content = '(not yet defined)'
+        this.valueDisplay.fg = WARNING
+        this.valueDisplay.attributes = createTextAttributes({ italic: true })
+      }
     }
     this.sourceLabel.content = source ? ` [${source}]` : ''
   }

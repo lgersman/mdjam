@@ -1,5 +1,5 @@
 ---
-title: DevOps runbook — full feature demo
+description: DevOps runbook — full feature demo
 prerequisites:
   tools:
     - git

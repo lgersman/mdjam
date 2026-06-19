@@ -1,4 +1,4 @@
-import { BoxRenderable, TextRenderable, type RenderContext } from '@opentui/core'
+import { BoxRenderable, TextRenderable, createTextAttributes, type RenderContext } from '@opentui/core'
 import { DANGER, WARNING } from '../theme/colors.js'
 
 export class SetupErrorPanel extends BoxRenderable {
@@ -18,9 +18,9 @@ export class SetupErrorPanel extends BoxRenderable {
     this.add(new TextRenderable(ctx, {
       content: `  Setup script failed (exit ${exitCode}) — code fence execution is disabled`,
       fg: DANGER,
-      bold: true,
+      attributes: createTextAttributes({ bold: true }),
       flexShrink: 0,
-    } as any))
+    }))
   }
 
   appendOutput(text: string): void {

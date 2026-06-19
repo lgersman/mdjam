@@ -1,5 +1,5 @@
 ---
-title: Interactive — embedded terminal sessions
+description: Interactive — embedded terminal sessions
 ---
 
 # Interactive blocks

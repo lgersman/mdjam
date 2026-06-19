@@ -1,5 +1,5 @@
 ---
-title: Variables — inputs, outputs, and state
+description: Variables — inputs, outputs, and state
 defaults:
   greeting: Hello
   target: World

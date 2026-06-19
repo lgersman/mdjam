@@ -225,16 +225,16 @@ export async function runApp(options: AppOptions): Promise<void> {
       currentStateStore.set(key, value, null)
     }
 
-    // Interactive defaults panel — always shown when defaults exist
+    // Interactive defaults panel — always shown when defaults exist, description shown when present
     const defaults = frontmatter.defaults ?? {}
-    if (Object.keys(defaults).length > 0) {
-      frontmatterPanel = new FrontmatterPanel(renderer, defaults, currentStateStore)
+    if (Object.keys(defaults).length > 0 || frontmatter.description) {
+      frontmatterPanel = new FrontmatterPanel(renderer, defaults, currentStateStore, frontmatter.description)
       scrollBox.content.add(frontmatterPanel)
     }
 
     // Verbose: render non-defaults frontmatter fields as YAML
     if (options.verbose) {
-      const { defaults: _defaults, ...rest } = frontmatter
+      const { defaults: _defaults, description: _description, ...rest } = frontmatter
       const fields = Object.fromEntries(
         Object.entries(rest).filter(([, v]) => v !== undefined)
       )
@@ -249,9 +249,9 @@ export async function runApp(options: AppOptions): Promise<void> {
         headerBox.add(new TextRenderable(renderer, {
           content: '  Frontmatter',
           fg: FG_MUTED,
-          italic: true,
+          attributes: createTextAttributes({ italic: true }),
           flexShrink: 0,
-        } as any))
+        }))
         headerBox.add(new CodeRenderable(renderer, {
           content: yaml.dump(fields, { indent: 2, lineWidth: -1 }).trimEnd(),
           filetype: 'yaml',

@@ -2,11 +2,12 @@ import {
   BoxRenderable,
   TextRenderable,
   InputRenderable,
+  createTextAttributes,
   type RenderContext,
 } from '@opentui/core'
 import { InputRow } from './InputRow.js'
 import type { StateStore } from '../engine/StateStore.js'
-import { BORDER_DEFAULT, FG_MUTED } from '../theme/colors.js'
+import { BORDER_DEFAULT, ACCENT, FG_MUTED } from '../theme/colors.js'
 
 export class FrontmatterPanel extends BoxRenderable {
   private rows: InputRow[] = []
@@ -15,6 +16,7 @@ export class FrontmatterPanel extends BoxRenderable {
     ctx: RenderContext,
     defaults: Record<string, string>,
     stateStore: StateStore,
+    description?: string,
   ) {
     super(ctx, {
       flexDirection: 'column',
@@ -22,14 +24,18 @@ export class FrontmatterPanel extends BoxRenderable {
       marginBottom: 1,
       border: true,
       borderColor: BORDER_DEFAULT,
+      focusedBorderColor: ACCENT,
     })
 
-    this.add(new TextRenderable(ctx, {
-      content: '  Variables',
-      fg: FG_MUTED,
-      italic: true,
-      flexShrink: 0,
-    } as any))
+    if (description) {
+      this.add(new TextRenderable(ctx, {
+        content: description,
+        fg: FG_MUTED,
+        attributes: createTextAttributes({ italic: true }),
+        flexShrink: 0,
+        paddingLeft: 1,
+      }))
+    }
 
     for (const [name, defaultValue] of Object.entries(defaults)) {
       const row = new InputRow(ctx, {

@@ -1,5 +1,5 @@
 ---
-title: Lifecycle — prerequisites, setup, and teardown
+description: Lifecycle — prerequisites, setup, and teardown
 prerequisites:
   tools:
     - curl

@@ -17,7 +17,6 @@ export class OutputPanel extends ScrollBoxRenderable {
       stickyScroll: true,
       stickyStart: 'bottom',
       contentOptions: {
-        paddingLeft: 2,
         flexDirection: 'column',
       },
       ...options,

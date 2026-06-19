@@ -3,7 +3,7 @@ import type { BlockStatus } from '../engine/BlockRunner.js'
 import { BG_SURFACE, FG_MUTED, FG_SUBTLE, ACCENT, SUCCESS, RUNNING, DANGER } from '../theme/colors.js'
 
 const STATUS_MAP: Record<BlockStatus, { fg: string; label: string }> = {
-  idle:         { fg: FG_MUTED,  label: 'Ready' },
+  idle:         { fg: FG_MUTED,  label: '' },
   running:      { fg: RUNNING,   label: 'Running…' },
   success:      { fg: SUCCESS,   label: 'Done' },
   failed:       { fg: DANGER,    label: 'Failed' },
@@ -79,8 +79,8 @@ export class BottomStatusBar extends BoxRenderable {
     }
 
     if (this.context === 'fm-input') {
-      this.leftText.content = 'Variables'
-      ;(this.leftText as any).fg = ACCENT
+      this.leftText.content = ''
+      ;(this.leftText as any).fg = FG_MUTED
       this.rightText.content = '[Enter] Confirm  [Esc] Blur  [Tab] Next  [h] Help'
       return
     }

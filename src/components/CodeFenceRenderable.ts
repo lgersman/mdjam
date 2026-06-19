@@ -28,36 +28,51 @@ export interface CodeFenceOptions {
   onExecute: () => Promise<void>
 }
 
+// Output section top border uses ├ and ┤ to visually connect with codeSection's left/right borders
+const OUTPUT_BORDER_CHARS = {
+  topLeft: '├', topRight: '┤', horizontal: '─', vertical: '│',
+  topT: '┬', bottomT: '┴', leftT: '├', rightT: '┤', bottomLeft: '└', bottomRight: '┘', cross: '┼',
+}
+
 export class CodeFenceRenderable extends BoxRenderable {
   private inputPanel: InputPanel | null = null
+  private codeSection: BoxRenderable
+  private outputSection: BoxRenderable
   private outputPanel: OutputPanel
   private readonly _runner: BlockRunner
   private readonly options: CodeFenceOptions
 
   constructor(ctx: RenderContext, opts: CodeFenceOptions) {
+    // Outer box is a borderless flex container; borders live on codeSection/outputSection
     super(ctx, {
       flexDirection: 'column',
       flexShrink: 0,
       marginBottom: 1,
-      border: true,
-      borderColor: BORDER_DEFAULT,
-      focusedBorderColor: ACCENT,
       focusable: true,
     })
 
     this._runner = opts.runner
     this.options = opts
 
+    // Code section — full border initially, bottom dropped when output is shown
+    this.codeSection = new BoxRenderable(ctx, {
+      flexDirection: 'column',
+      flexShrink: 0,
+      border: true,
+      borderColor: BORDER_DEFAULT,
+    })
+    this.add(this.codeSection)
+
     // Header: description or parseError
     if (opts.parseError) {
-      this.add(new TextRenderable(ctx, {
+      this.codeSection.add(new TextRenderable(ctx, {
         content: `⚠ Metadata parse error: ${opts.parseError}`,
         fg: DANGER,
         flexShrink: 0,
         paddingLeft: 1,
       }))
     } else if (opts.metadata?.description) {
-      this.add(new TextRenderable(ctx, {
+      this.codeSection.add(new TextRenderable(ctx, {
         content: opts.metadata.description,
         fg: FG_MUTED,
         attributes: createTextAttributes({ italic: true }),
@@ -72,14 +87,14 @@ export class CodeFenceRenderable extends BoxRenderable {
         if (opts.executionBlocked) return
         if (this.inputPanel && !this.inputPanel.allInputsSatisfied()) return
         if (this.runner.status === 'running') return
-        this.outputPanel.clear()
+        this.clearOutput()
         opts.onExecute().catch(() => {})
       })
-      this.add(this.inputPanel)
+      this.codeSection.add(this.inputPanel)
     }
 
     // Fence body: syntax-highlighted code
-    this.add(new CodeRenderable(ctx, {
+    this.codeSection.add(new CodeRenderable(ctx, {
       content: opts.cleanBody.trimEnd(),
       filetype: 'bash',
       syntaxStyle: opts.syntaxStyle,
@@ -88,12 +103,26 @@ export class CodeFenceRenderable extends BoxRenderable {
       paddingLeft: 2,
     }))
 
-    // Output panel (hidden until execution)
+    // Output section — hidden until execution, ├/┤ corners connect to codeSection borders
+    this.outputSection = new BoxRenderable(ctx, {
+      flexDirection: 'column',
+      flexShrink: 0,
+      border: true,
+      borderColor: BORDER_DEFAULT,
+      customBorderChars: OUTPUT_BORDER_CHARS,
+    })
+    this.outputSection.visible = false
+    this.add(this.outputSection)
+
     this.outputPanel = new OutputPanel(ctx)
-    this.add(this.outputPanel)
+    this.outputSection.add(this.outputPanel)
 
     // Wire up runner output
     this._runner.on('output', (text: string) => {
+      if (!this.outputSection.visible) {
+        this.codeSection.border = ['top', 'left', 'right']
+        this.outputSection.visible = true
+      }
       this.outputPanel.append(text)
     })
 
@@ -113,6 +142,16 @@ export class CodeFenceRenderable extends BoxRenderable {
         }
       })
     }
+  }
+
+  private clearOutput(): void {
+    this.codeSection.border = true
+    this.outputSection.visible = false
+    this.outputPanel.clear()
+    // Restore border colors after border reset
+    const color = this._focused ? ACCENT : BORDER_DEFAULT
+    this.codeSection.borderColor = color
+    this.outputSection.borderColor = color
   }
 
   get hasScrollableOutput(): boolean {
@@ -137,7 +176,7 @@ export class CodeFenceRenderable extends BoxRenderable {
       if (this.inputPanel && !this.inputPanel.allInputsSatisfied()) return true
       if (this._runner.status === 'running') return true
 
-      this.outputPanel.clear()
+      this.clearOutput()
       this.options.onExecute().catch(() => {})
       return true
     }
@@ -154,11 +193,9 @@ export class CodeFenceRenderable extends BoxRenderable {
 
   protected override propagateFocusChange(hasFocus: boolean): void {
     super.propagateFocusChange(hasFocus)
-    if (hasFocus) {
-      this.borderColor = ACCENT
-    } else {
-      this.borderColor = BORDER_DEFAULT
-    }
+    const color = hasFocus ? ACCENT : BORDER_DEFAULT
+    this.codeSection.borderColor = color
+    this.outputSection.borderColor = color
   }
 
   get inputRenderables(): InputRenderable[] {

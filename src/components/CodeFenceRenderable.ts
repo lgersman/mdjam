@@ -41,6 +41,7 @@ export class CodeFenceRenderable extends BoxRenderable {
   private outputPanel: OutputPanel
   private readonly _runner: BlockRunner
   private readonly options: CodeFenceOptions
+  private _childFocused = false
 
   constructor(ctx: RenderContext, opts: CodeFenceOptions) {
     // Outer box is a borderless flex container; borders live on codeSection/outputSection
@@ -144,12 +145,19 @@ export class CodeFenceRenderable extends BoxRenderable {
     }
   }
 
+  setChildFocused(focused: boolean): void {
+    this._childFocused = focused
+    const color = (this._focused || focused) ? ACCENT : BORDER_DEFAULT
+    this.codeSection.borderColor = color
+    this.outputSection.borderColor = color
+  }
+
   private clearOutput(): void {
     this.codeSection.border = true
     this.outputSection.visible = false
     this.outputPanel.clear()
     // Restore border colors after border reset
-    const color = this._focused ? ACCENT : BORDER_DEFAULT
+    const color = (this._focused || this._childFocused) ? ACCENT : BORDER_DEFAULT
     this.codeSection.borderColor = color
     this.outputSection.borderColor = color
   }

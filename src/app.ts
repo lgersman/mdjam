@@ -447,6 +447,15 @@ export async function runApp(options: AppOptions): Promise<void> {
   await loadDocument()
 
   // Focus management: flat list of fences (no inputs) and variable editors (fences with inputs)
+  let childFocusedFence: CodeFenceRenderable | null = null
+  function setChildFocusedFence(fence: CodeFenceRenderable | null): void {
+    if (childFocusedFence !== fence) {
+      childFocusedFence?.setChildFocused(false)
+      childFocusedFence = fence
+      fence?.setChildFocused(true)
+    }
+  }
+
   type FocusItem =
     | { kind: 'fence'; fence: CodeFenceRenderable }
     | { kind: 'input'; input: InputRenderable; fence: CodeFenceRenderable }
@@ -525,12 +534,15 @@ export async function runApp(options: AppOptions): Promise<void> {
 
     const item = items[nextIndex]
     if (item.kind === 'fence') {
+      setChildFocusedFence(null)
       item.fence.focus()
       scrollBox.scrollChildIntoView(item.fence.id)
     } else if (item.kind === 'input') {
+      setChildFocusedFence(item.fence)
       item.input.focus()
       scrollBox.scrollChildIntoView(item.fence.id)
     } else {
+      setChildFocusedFence(null)
       item.input.focus()
       scrollBox.scrollChildIntoView(item.panel.id)
     }
@@ -578,6 +590,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     if (focused instanceof InputRenderable) {
       if (key.name === 'escape') {
         focused.blur()
+        setChildFocusedFence(null)
         updateStatusBar()
       }
       return

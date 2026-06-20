@@ -26,6 +26,7 @@ import { checkPrerequisites } from './engine/Prerequisites.js'
 import { createSyntaxStyle, type ThemeName } from './theme/themes.js'
 import { BORDER_DEFAULT, DANGER, FG_MUTED } from './theme/colors.js'
 import { CodeFenceRenderable } from './components/CodeFenceRenderable.js'
+import { TocRenderable, type HeadingEntry } from './components/TocRenderable.js'
 import { PrerequisitePanel } from './components/PrerequisitePanel.js'
 import { SetupErrorPanel } from './components/SetupErrorPanel.js'
 import { StateSidePanel } from './components/StateSidePanel.js'
@@ -100,6 +101,19 @@ function _hasStructuredBlocks(token: any) {
   }
 })((MarkdownRenderable.prototype as any).applyBlockquoteRenderable)
 
+function extractHeadings(markdown: string): HeadingEntry[] {
+  const result: HeadingEntry[] = []
+  let inFence = false
+  let idx = 0
+  for (const line of markdown.split('\n')) {
+    if (/^```/.test(line)) { inFence = !inFence; continue }
+    if (inFence) continue
+    const m = /^(#{1,6})\s+(.+)$/.exec(line)
+    if (m) result.push({ depth: m[1].length, text: m[2].trim(), id: `toc_heading_${idx++}` })
+  }
+  return result
+}
+
 export async function runApp(options: AppOptions): Promise<void> {
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
@@ -148,6 +162,7 @@ export async function runApp(options: AppOptions): Promise<void> {
 
   // Mutable session state, recreated on reload
   let fenceRenderables: CodeFenceRenderable[] = []
+  let tocRenderable: TocRenderable | null = null
   let frontmatterPanel: FrontmatterPanel | null = null
   let teardownScript: string | undefined
   let currentMarkdown: MarkdownRenderable | null = null
@@ -184,6 +199,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       try { r.destroyRecursively() } catch {}
     })
     fenceRenderables = []
+    tocRenderable = null
     if (frontmatterPanel) {
       try { frontmatterPanel.destroyRecursively() } catch {}
       frontmatterPanel = null
@@ -299,6 +315,23 @@ export async function runApp(options: AppOptions): Promise<void> {
     executionEngine = new ExecutionEngine(currentStateStore, graph, allBlocks)
 
     let fenceIndex = 0
+    let headingRenderIndex = 0
+    const headings = extractHeadings(body)
+    let tocRendered = false
+
+    const tocRenderer = (token: Tokens.Code) => {
+      if (tocRendered) {
+        return new TextRenderable(renderer, { content: '⚠ toc block can only appear once', fg: DANGER, marginBottom: 1 })
+      }
+      tocRendered = true
+      let opts: Record<string, any> = {}
+      try {
+        if (token.text.trim()) opts = (yaml.load(token.text) as Record<string, any>) ?? {}
+      } catch { /* ignore malformed options */ }
+      const toc = new TocRenderable(renderer, { headings, scrollBox, ...opts })
+      tocRenderable = toc
+      return toc
+    }
 
     // Create code fence renderer for bash/sh
     const bashRenderer = (token: Tokens.Code) => {
@@ -350,6 +383,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     const codeBlockRenderer = createMarkdownCodeBlockRenderer({
       bash: bashRenderer,
       sh: bashRenderer,
+      toc: tocRenderer,
     })
 
     const patchListBullets = (box: BoxRenderable): void => {
@@ -394,7 +428,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       if (token.type === 'heading') {
         const h = token as Tokens.Heading
         const style = context.syntaxStyle.getStyle('markup.heading')
-        const headingBox = new BoxRenderable(renderer, { flexDirection: 'column', flexShrink: 0, marginBottom: 1 })
+        const headingBox = new BoxRenderable(renderer, { id: `toc_heading_${headingRenderIndex++}`, flexDirection: 'column', flexShrink: 0, marginBottom: 1 })
         headingBox.add(new TextRenderable(renderer, {
           content: `${'#'.repeat(h.depth)} ${h.text}`,
           fg: style?.fg,
@@ -460,6 +494,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     | { kind: 'fence'; fence: CodeFenceRenderable }
     | { kind: 'input'; input: InputRenderable; fence: CodeFenceRenderable }
     | { kind: 'fm-input'; input: InputRenderable; panel: FrontmatterPanel }
+    | { kind: 'toc'; toc: TocRenderable }
 
   function buildFocusList(): FocusItem[] {
     const items: FocusItem[] = []
@@ -468,6 +503,10 @@ export async function runApp(options: AppOptions): Promise<void> {
       for (const input of frontmatterPanel.inputRenderables) {
         items.push({ kind: 'fm-input', input, panel: frontmatterPanel })
       }
+    }
+
+    if (tocRenderable) {
+      items.push({ kind: 'toc', toc: tocRenderable })
     }
 
     for (const fence of fenceRenderables) {
@@ -491,6 +530,9 @@ export async function runApp(options: AppOptions): Promise<void> {
     if (focused instanceof CodeFenceRenderable) {
       bottomStatusBar.setContext('codeblock')
       attachFenceStatusListener(focused)
+    } else if (focused instanceof TocRenderable) {
+      bottomStatusBar.setContext('markdown')
+      attachFenceStatusListener(null)
     } else if (focused instanceof InputRenderable) {
       const items = buildFocusList()
       const item = items.find(i =>
@@ -518,6 +560,8 @@ export async function runApp(options: AppOptions): Promise<void> {
     let currentIndex = -1
     if (focused instanceof CodeFenceRenderable) {
       currentIndex = items.findIndex(i => i.kind === 'fence' && i.fence === focused)
+    } else if (focused instanceof TocRenderable) {
+      currentIndex = items.findIndex(i => i.kind === 'toc' && i.toc === focused)
     } else if (focused instanceof InputRenderable) {
       currentIndex = items.findIndex(i =>
         (i.kind === 'input' && i.input === focused) ||
@@ -543,6 +587,11 @@ export async function runApp(options: AppOptions): Promise<void> {
       frontmatterPanel?.setChildFocused(false)
       item.input.focus()
       scrollBox.scrollChildIntoView(item.fence.id)
+    } else if (item.kind === 'toc') {
+      setChildFocusedFence(null)
+      frontmatterPanel?.setChildFocused(false)
+      item.toc.focus()
+      scrollBox.scrollChildIntoView(item.toc.id)
     } else {
       setChildFocusedFence(null)
       frontmatterPanel?.setChildFocused(true)
@@ -598,6 +647,16 @@ export async function runApp(options: AppOptions): Promise<void> {
         updateStatusBar()
       }
       return
+    }
+
+    // Skip global scroll for up/down when TOC has focus (handled by TocRenderable.handleKeyPress)
+    if (focused instanceof TocRenderable) {
+      if (key.name === 'escape') {
+        focused.blur()
+        updateStatusBar()
+        return
+      }
+      if (key.name === 'up' || key.name === 'down' || key.name === 'k' || key.name === 'j') return
     }
 
     const focusedFence = focused instanceof CodeFenceRenderable && focused.hasScrollableOutput ? focused : null

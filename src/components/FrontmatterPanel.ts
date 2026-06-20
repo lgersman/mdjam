@@ -48,6 +48,10 @@ export class FrontmatterPanel extends BoxRenderable {
     }
   }
 
+  setChildFocused(focused: boolean): void {
+    this.borderColor = focused ? ACCENT : BORDER_DEFAULT
+  }
+
   get inputRenderables(): InputRenderable[] {
     return this.rows
       .map(r => r.inputRenderable)

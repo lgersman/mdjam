@@ -535,14 +535,17 @@ export async function runApp(options: AppOptions): Promise<void> {
     const item = items[nextIndex]
     if (item.kind === 'fence') {
       setChildFocusedFence(null)
+      frontmatterPanel?.setChildFocused(false)
       item.fence.focus()
       scrollBox.scrollChildIntoView(item.fence.id)
     } else if (item.kind === 'input') {
       setChildFocusedFence(item.fence)
+      frontmatterPanel?.setChildFocused(false)
       item.input.focus()
       scrollBox.scrollChildIntoView(item.fence.id)
     } else {
       setChildFocusedFence(null)
+      frontmatterPanel?.setChildFocused(true)
       item.input.focus()
       scrollBox.scrollChildIntoView(item.panel.id)
     }
@@ -591,6 +594,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       if (key.name === 'escape') {
         focused.blur()
         setChildFocusedFence(null)
+        frontmatterPanel?.setChildFocused(false)
         updateStatusBar()
       }
       return

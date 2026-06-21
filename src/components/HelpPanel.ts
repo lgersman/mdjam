@@ -2,7 +2,7 @@ import { BoxRenderable, TextRenderable, TextTableRenderable, fg, createTextAttri
 import { BG_BASE, ACCENT, FG_DEFAULT, ATTENTION } from '../theme/colors.js'
 
 const HOTKEYS: { key: string; description: string }[] = [
-  { key: 'h',             description: 'Show / hide this help' },
+  { key: '?',             description: 'Show / hide this help' },
   { key: 'Tab',           description: 'Focus next code block' },
   { key: 'Shift+Tab',     description: 'Focus previous code block' },
   { key: 'Enter',         description: 'Run focused code block' },
@@ -37,7 +37,7 @@ export class HelpPanel extends BoxRenderable {
     })
 
     this.add(new TextRenderable(ctx, {
-      content: '  Keyboard shortcuts  [h] or [Esc] to close',
+      content: '  Keyboard shortcuts  [?] or [Esc] to close',
       fg: ACCENT,
       attributes: createTextAttributes({ bold: true }),
       flexShrink: 0,

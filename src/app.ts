@@ -662,7 +662,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     const focusedFence = focused instanceof CodeFenceRenderable && focused.hasScrollableOutput ? focused : null
 
     switch (key.name) {
-      case 'h':
+      case '?':
         helpPanel.toggle()
         break
 

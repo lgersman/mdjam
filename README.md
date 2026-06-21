@@ -40,6 +40,7 @@ Options:
 | `Ctrl+Shift+V` | Paste into focused input |
 | `r` | Reload document |
 | `s` | Toggle state store panel |
+| `?` | Show / hide keyboard help |
 | `Ctrl+C` | Quit (runs teardown script if declared) |
 
 ## Document format

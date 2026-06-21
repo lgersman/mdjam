@@ -41,7 +41,7 @@ export class BottomStatusBar extends BoxRenderable {
     this.add(this.leftText)
 
     this.rightText = new TextRenderable(ctx, {
-      content: '[Tab] Next  [j/k] Scroll  [h] Help  [r] Reload  [s] State  [Ctrl+C] Quit',
+      content: '[Tab] Next  [j/k] Scroll  [?] Help  [r] Reload  [s] State  [Ctrl+C] Quit',
       fg: FG_SUBTLE,
       flexShrink: 0,
     })
@@ -74,14 +74,14 @@ export class BottomStatusBar extends BoxRenderable {
     if (this.context === 'markdown') {
       this.leftText.content = ''
       ;(this.leftText as any).fg = FG_MUTED
-      this.rightText.content = '[Tab] Next  [j/k] Scroll  [h] Help  [r] Reload  [s] State  [Ctrl+C] Quit'
+      this.rightText.content = '[Tab] Next  [j/k] Scroll  [?] Help  [r] Reload  [s] State  [Ctrl+C] Quit'
       return
     }
 
     if (this.context === 'fm-input') {
       this.leftText.content = ''
       ;(this.leftText as any).fg = FG_MUTED
-      this.rightText.content = '[Enter] Confirm  [Esc] Blur  [Tab] Next  [h] Help'
+      this.rightText.content = '[Enter] Confirm  [Esc] Blur  [Tab] Next  [?] Help'
       return
     }
 
@@ -100,18 +100,18 @@ export class BottomStatusBar extends BoxRenderable {
 
     if (this.context === 'block-input') {
       this.rightText.content = this.blockStatus === 'running'
-        ? '[Esc] Blur  [h] Help'
-        : '[Enter] Submit & Run  [Esc] Blur  [Tab] Next  [h] Help'
+        ? '[Esc] Blur  [?] Help'
+        : '[Enter] Submit & Run  [Esc] Blur  [Tab] Next  [?] Help'
       return
     }
 
     // context === 'codeblock'
     if (this.blockStatus === 'running') {
-      this.rightText.content = '[Esc] Cancel  [h] Help'
+      this.rightText.content = '[Esc] Cancel  [?] Help'
     } else if (this.blockStatus === 'blocked' || this.blockStatus === 'dep-failed') {
-      this.rightText.content = '[Tab] Next  [Esc] Blur  [h] Help'
+      this.rightText.content = '[Tab] Next  [Esc] Blur  [?] Help'
     } else {
-      this.rightText.content = '[Enter] Run  [Esc] Blur  [Tab] Next  [j/k] Scroll  [h] Help'
+      this.rightText.content = '[Enter] Run  [Esc] Blur  [Tab] Next  [j/k] Scroll  [?] Help'
     }
   }
 }

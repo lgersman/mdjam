@@ -212,6 +212,7 @@ echo "::set-output name=MY_KEY::my_value"
 | `Esc` | Cancel focused input edit / cancel running block |
 | `r` | Reload document |
 | `s` | Toggle state store panel |
+| `?` | Show / hide keyboard help |
 | `Ctrl+C` | Quit |
 
 ### 7.2 Focus Model

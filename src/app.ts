@@ -15,7 +15,7 @@ import {
 import type { PasteEvent } from '@opentui/core/lib/KeyHandler.js'
 import type { Token, Tokens } from 'marked'
 import { readFileSync, watch } from 'node:fs'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { parseFrontmatter } from './parser/frontmatter.js'
 import { parseFenceMetadata, extractFenceNodes } from './parser/metadata.js'
 import { buildDependencyGraph } from './parser/dependency.js'

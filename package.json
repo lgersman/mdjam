@@ -11,7 +11,8 @@
     "build": "bun build src/cli.ts --outfile dist/cli.js --target bun --external '*' --sourcemap",
     "start": "bun src/cli.ts",
     "test": "bun test",
-    "test:watch": "bun test --watch"
+    "test:watch": "bun test --watch",
+    "release": "./scripts/release.sh"
   },
   "engines": {
     "bun": ">=1.3.14"
@@ -19,12 +20,11 @@
   "dependencies": {
     "@opentui/core": "^0.4.1",
     "gray-matter": "^4.0.3",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^5.0.0",
     "tree-sitter-bash": "^0.25.1"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9"
+    "@types/bun": "latest"
   },
   "packageManager": "bun@1.3.14",
   "patchedDependencies": {

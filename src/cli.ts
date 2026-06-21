@@ -19,6 +19,7 @@ addDefaultParsers([{
 
 const HELP = `\
 Usage: mdrun <file> [options]
+       mdrun --stdin [options]
 
 Terminal markdown viewer with executable code fences
 
@@ -26,6 +27,7 @@ Arguments:
   <file>             Markdown file to open
 
 Options:
+  --stdin            Read markdown from stdin
   --no-auto          Suppress auto-execution of auto:true blocks
   --no-watch         Disable watch mode (default: enabled)
   --theme <name>     Syntax theme: dark | light | dracula | tokyo-night  (default: dark)
@@ -44,6 +46,7 @@ const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
   allowPositionals: true,
   options: {
+    stdin:    { type: 'boolean', default: false },
     auto:     { type: 'boolean', default: true },
     watch:    { type: 'boolean', default: true },
     theme:    { type: 'string',  default: 'dark' },
@@ -64,18 +67,6 @@ if (values.version) {
   process.exit(0)
 }
 
-if (positionals.length === 0) {
-  process.stderr.write('Error: missing required argument <file>\n')
-  process.exit(1)
-}
-
-const filePath = resolve(positionals[0])
-
-if (!existsSync(filePath)) {
-  process.stderr.write(`Error: File not found: ${filePath}\n`)
-  process.exit(1)
-}
-
 const theme = (values.theme ?? 'dark') as ThemeName
 const validThemes: ThemeName[] = ['dark', 'light', 'dracula', 'tokyo-night']
 if (!validThemes.includes(theme)) {
@@ -83,11 +74,35 @@ if (!validThemes.includes(theme)) {
   process.exit(1)
 }
 
-await runApp({
-  filePath,
-  theme,
-  noAuto: !values.auto,
-  noWatch: !values.watch,
-  verbose: values.verbose ?? false,
-  delegate: values.delegate ?? false,
-})
+if (values.stdin) {
+  const content = await Bun.stdin.text()
+  await runApp({
+    content,
+    theme,
+    noAuto: !values.auto,
+    noWatch: true,
+    verbose: values.verbose ?? false,
+    delegate: values.delegate ?? false,
+  })
+} else {
+  if (positionals.length === 0) {
+    process.stderr.write('Error: missing required argument <file>\n')
+    process.exit(1)
+  }
+
+  const filePath = resolve(positionals[0])
+
+  if (!existsSync(filePath)) {
+    process.stderr.write(`Error: File not found: ${filePath}\n`)
+    process.exit(1)
+  }
+
+  await runApp({
+    filePath,
+    theme,
+    noAuto: !values.auto,
+    noWatch: !values.watch,
+    verbose: values.verbose ?? false,
+    delegate: values.delegate ?? false,
+  })
+}

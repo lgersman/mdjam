@@ -18,8 +18,10 @@ bun link          # makes `mdrun` available globally
 
 ```
 mdrun [options] <file.md>
+mdrun --stdin [options]
 
 Options:
+  --stdin            Read markdown from stdin instead of a file
   --no-auto          Suppress auto-execution of auto:true blocks
   --no-watch         Disable file watch / reload on change
   --theme <name>     dark | light | dracula | tokyo-night  (default: dark)
@@ -28,6 +30,15 @@ Options:
   --version          Print version
   --help             Show help
 ```
+
+`--stdin` is useful for piping dynamically generated markdown, e.g. from an AI agent:
+
+```bash
+ai-agent "explain this error" | mdrun --stdin
+echo "# Hello\n\`\`\`bash\necho hi\n\`\`\`" | mdrun --stdin
+```
+
+Watch mode is automatically disabled when reading from stdin.
 
 ## Keyboard map
 

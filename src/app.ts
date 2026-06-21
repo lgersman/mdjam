@@ -38,7 +38,8 @@ import { BottomStatusBar } from './components/BottomStatusBar.js'
 import type { BlockStatus } from './engine/BlockRunner.js'
 
 export interface AppOptions {
-  filePath: string
+  filePath?: string
+  content?: string
   theme: ThemeName
   noAuto: boolean
   noWatch: boolean
@@ -219,18 +220,22 @@ export async function runApp(options: AppOptions): Promise<void> {
       scrollBox.content.remove(child.id)
     }
 
-    // Read the file
+    // Read the file (or use pre-loaded stdin content)
     let content: string
-    try {
-      content = readFileSync(options.filePath, 'utf8')
-    } catch (err) {
-      const errBox = new BoxRenderable(renderer, { flexDirection: 'column', padding: 1 })
-      errBox.add(new TextRenderable(renderer, {
-        content: `Error reading file: ${err instanceof Error ? err.message : String(err)}`,
-        fg: DANGER,
-      }))
-      scrollBox.content.add(errBox)
-      return
+    if (options.content !== undefined) {
+      content = options.content
+    } else {
+      try {
+        content = readFileSync(options.filePath!, 'utf8')
+      } catch (err) {
+        const errBox = new BoxRenderable(renderer, { flexDirection: 'column', padding: 1 })
+        errBox.add(new TextRenderable(renderer, {
+          content: `Error reading file: ${err instanceof Error ? err.message : String(err)}`,
+          fg: DANGER,
+        }))
+        scrollBox.content.add(errBox)
+        return
+      }
     }
 
     const { frontmatter, body } = parseFrontmatter(content)
@@ -778,8 +783,8 @@ export async function runApp(options: AppOptions): Promise<void> {
     await quit()
   })
 
-  // Watch mode
-  if (!options.noWatch) {
+  // Watch mode (not applicable for stdin input)
+  if (!options.noWatch && options.filePath) {
     let reloadTimer: ReturnType<typeof setTimeout> | null = null
     try {
       watch(options.filePath, () => {

@@ -42,6 +42,7 @@ export interface AppOptions {
   noAuto: boolean
   noWatch: boolean
   verbose: boolean
+  delegate: boolean
 }
 
 // ponytail: getInterBlockMargin is private; patch prototype so list→heading gets margin=1
@@ -154,6 +155,7 @@ export async function runApp(options: AppOptions): Promise<void> {
 
   // Static status bar at bottom
   const bottomStatusBar = new BottomStatusBar(renderer)
+  bottomStatusBar.delegate = options.delegate
   rootBox.add(bottomStatusBar)
 
   // Teardown panel (shown on exit)
@@ -750,6 +752,20 @@ export async function runApp(options: AppOptions): Promise<void> {
       })
       await lifecycleRunner.runTeardown(teardownScript)
     }
+
+    if (options.delegate) {
+      const focused = renderer.currentFocusedRenderable
+      renderer.destroy()
+      const runner = focused instanceof CodeFenceRenderable ? focused.runner : null
+      if (!runner || runner.exitCode === null) {
+        process.stderr.write('mdrun: selected block was not executed\n')
+        process.exit(-1)
+      }
+      for (const line of runner.stdoutLines) process.stdout.write(line)
+      for (const line of runner.stderrLines) process.stderr.write(line)
+      process.exit(runner.exitCode)
+    }
+
     renderer.destroy()
     process.exit(0)
   }

@@ -19,6 +19,7 @@ Options:
   --no-watch         Disable watch mode (default: enabled)
   --theme <name>     Syntax theme: dark | light | dracula | tokyo-night  (default: dark)
   --verbose          Show document frontmatter as a header
+  --delegate         On exit, write the focused block's stdout/stderr and use its exit code
   --version          Show version
   --help             Show this help
 `
@@ -32,12 +33,13 @@ const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
   allowPositionals: true,
   options: {
-    auto:    { type: 'boolean', default: true },
-    watch:   { type: 'boolean', default: true },
-    theme:   { type: 'string',  default: 'dark' },
-    verbose: { type: 'boolean', default: false },
-    version: { type: 'boolean', default: false },
-    help:    { type: 'boolean', default: false },
+    auto:     { type: 'boolean', default: true },
+    watch:    { type: 'boolean', default: true },
+    theme:    { type: 'string',  default: 'dark' },
+    verbose:  { type: 'boolean', default: false },
+    delegate: { type: 'boolean', default: false },
+    version:  { type: 'boolean', default: false },
+    help:     { type: 'boolean', default: false },
   },
 })
 
@@ -76,4 +78,5 @@ await runApp({
   noAuto: !values.auto,
   noWatch: !values.watch,
   verbose: values.verbose ?? false,
+  delegate: values.delegate ?? false,
 })

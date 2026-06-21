@@ -39,6 +39,8 @@ export class BlockRunner extends EventEmitter {
   readonly blockId: string
   status: BlockStatus = 'idle'
   exitCode: number | null = null
+  readonly stdoutLines: string[] = []
+  readonly stderrLines: string[] = []
   private proc: ReturnType<typeof spawn> | null = null
   private readonly stateStore: StateStore
 
@@ -52,6 +54,8 @@ export class BlockRunner extends EventEmitter {
     // Kill any running process first
     this.cancelInternal()
 
+    this.stdoutLines.length = 0
+    this.stderrLines.length = 0
     this.setStatus('running')
 
     const captureFile = join(tmpdir(), `mdrun_${this.blockId.replace(/[^a-z0-9]/gi, '_')}_${process.pid}.env`)
@@ -127,6 +131,9 @@ export class BlockRunner extends EventEmitter {
     resume: () => void,
   ): Promise<number> {
     this.cancelInternal()
+
+    this.stdoutLines.length = 0
+    this.stderrLines.length = 0
     this.setStatus('running')
 
     const prefix = `mdrun_${this.blockId.replace(/[^a-z0-9]/gi, '_')}_${process.pid}`
@@ -223,6 +230,9 @@ export class BlockRunner extends EventEmitter {
         this.emit('setOutput', key, value)
         return
       }
+      this.stdoutLines.push(line + '\n')
+    } else {
+      this.stderrLines.push(line + '\n')
     }
     this.emit('output', line + '\n')
   }

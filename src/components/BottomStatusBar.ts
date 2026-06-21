@@ -22,6 +22,7 @@ export class BottomStatusBar extends BoxRenderable {
   private exitCode: number | null = null
   private missingList: string[] = []
   private flashTimer: ReturnType<typeof setTimeout> | null = null
+  delegate = false
 
   constructor(ctx: RenderContext) {
     super(ctx, {
@@ -48,6 +49,11 @@ export class BottomStatusBar extends BoxRenderable {
     this.add(this.rightText)
   }
 
+  protected override onLayoutResize(width: number, height: number): void {
+    super.onLayoutResize(width, height)
+    this.applyLayout()
+  }
+
   flash(message: string, durationMs = 2000): void {
     if (this.flashTimer) clearTimeout(this.flashTimer)
     this.leftText.content = message
@@ -70,48 +76,73 @@ export class BottomStatusBar extends BoxRenderable {
     this.refresh()
   }
 
-  private refresh(): void {
+  private computeTexts(): { leftContent: string; leftFg: string; rightContent: string } {
     if (this.context === 'markdown') {
-      this.leftText.content = ''
-      ;(this.leftText as any).fg = FG_MUTED
-      this.rightText.content = '[Tab] Next  [j/k] Scroll  [?] Help  [r] Reload  [s] State  [Ctrl+C] Quit'
-      return
+      return {
+        leftContent: '',
+        leftFg: FG_MUTED,
+        rightContent: '[Tab] Next  [j/k] Scroll  [?] Help  [r] Reload  [s] State  [Ctrl+C] Quit',
+      }
     }
 
     if (this.context === 'fm-input') {
-      this.leftText.content = ''
-      ;(this.leftText as any).fg = FG_MUTED
-      this.rightText.content = '[Enter] Confirm  [Esc] Blur  [Tab] Next  [?] Help'
-      return
+      return {
+        leftContent: '',
+        leftFg: FG_MUTED,
+        rightContent: '[Enter] Confirm  [Esc] Blur  [Tab] Next  [?] Help',
+      }
     }
 
     // codeblock and block-input both show block status on left
     const info = STATUS_MAP[this.blockStatus]
-    let label = info.label
+    let leftContent = info.label
     if (this.blockStatus === 'success' && this.exitCode !== null) {
-      label = `Done (exit ${this.exitCode})`
+      leftContent = `Done (exit ${this.exitCode})`
+      if (this.delegate) leftContent += ' · Ctrl+C to return output'
     } else if (this.blockStatus === 'failed' && this.exitCode !== null) {
-      label = `Failed (exit ${this.exitCode})`
+      leftContent = `Failed (exit ${this.exitCode})`
+      if (this.delegate) leftContent += ' · Ctrl+C to return output'
     } else if (this.blockStatus === 'blocked' && this.missingList.length > 0) {
-      label = `Blocked — missing: ${this.missingList.join(', ')}`
+      leftContent = `Blocked — missing: ${this.missingList.join(', ')}`
     }
-    this.leftText.content = label
-    ;(this.leftText as any).fg = info.fg
 
+    let rightContent: string
     if (this.context === 'block-input') {
-      this.rightText.content = this.blockStatus === 'running'
+      rightContent = this.blockStatus === 'running'
         ? '[Esc] Blur  [?] Help'
         : '[Enter] Submit & Run  [Esc] Blur  [Tab] Next  [?] Help'
-      return
+    } else if (this.blockStatus === 'running') {
+      rightContent = '[Esc] Cancel  [?] Help'
+    } else if (this.blockStatus === 'blocked' || this.blockStatus === 'dep-failed') {
+      rightContent = '[Tab] Next  [Esc] Blur  [?] Help'
+    } else {
+      rightContent = '[Enter] Run  [Esc] Blur  [Tab] Next  [j/k] Scroll  [?] Help'
     }
 
-    // context === 'codeblock'
-    if (this.blockStatus === 'running') {
-      this.rightText.content = '[Esc] Cancel  [?] Help'
-    } else if (this.blockStatus === 'blocked' || this.blockStatus === 'dep-failed') {
-      this.rightText.content = '[Tab] Next  [Esc] Blur  [?] Help'
+    return { leftContent, leftFg: info.fg, rightContent }
+  }
+
+  private applyLayout(): void {
+    const { leftContent, leftFg, rightContent } = this.computeTexts()
+
+    this.leftText.content = leftContent
+    ;(this.leftText as any).fg = leftFg
+    this.rightText.content = rightContent
+
+    // paddingLeft + paddingRight = 2; 1 gap between the two texts in row mode
+    const availableWidth = this.width - 2
+    const fitsInRow = availableWidth > 0 && leftContent.length + 1 + rightContent.length <= availableWidth
+
+    if (fitsInRow) {
+      this.flexDirection = 'row'
+      this.leftText.flexGrow = 1
     } else {
-      this.rightText.content = '[Enter] Run  [Esc] Blur  [Tab] Next  [j/k] Scroll  [?] Help'
+      this.flexDirection = 'column'
+      this.leftText.flexGrow = 0
     }
+  }
+
+  private refresh(): void {
+    this.applyLayout()
   }
 }

@@ -19,6 +19,7 @@ Options:
   --no-watch         Disable watch mode (default: enabled)
   --theme <name>     Syntax theme: dark | light | dracula | tokyo-night  (default: dark)
   --verbose          Show document frontmatter as a header
+  --delegate         On exit, write the focused block's stdout/stderr and use its exit code
   --version          Show version
   --help             Show this help
 `;
@@ -34,6 +35,7 @@ var { values, positionals } = parseArgs({
     watch: { type: "boolean", default: true },
     theme: { type: "string", default: "dark" },
     verbose: { type: "boolean", default: false },
+    delegate: { type: "boolean", default: false },
     version: { type: "boolean", default: false },
     help: { type: "boolean", default: false }
   }
@@ -70,8 +72,9 @@ await runApp({
   theme,
   noAuto: !values.auto,
   noWatch: !values.watch,
-  verbose: values.verbose ?? false
+  verbose: values.verbose ?? false,
+  delegate: values.delegate ?? false
 });
 
-//# debugId=CE4BE7EF7E5DEBCE64756E2164756E21
+//# debugId=A091019AAEEE08C764756E2164756E21
 //# sourceMappingURL=cli.js.map

@@ -11,14 +11,14 @@ setup: |
   echo "::set-output name=work_dir::$WORK_DIR"
   echo "Setup complete — workspace: $WORK_DIR"
 teardown: |
-  echo "Cleaning up $MDFENCE_WORK_DIR..."
-  rm -rf "$MDFENCE_WORK_DIR"
+  echo "Cleaning up $MDJAM_WORK_DIR..."
+  rm -rf "$MDJAM_WORK_DIR"
   echo "Done."
 ---
 
 # Lifecycle
 
-mdrun supports three lifecycle hooks that fire around your blocks:
+mdjam supports three lifecycle hooks that fire around your blocks:
 
 | Hook | When | Use for |
 |------|------|---------|
@@ -52,15 +52,15 @@ It created a temporary directory and stored its path in the state store:
 # auto: true
 # description: Shows that the setup workspace is available
 # ---
-echo "Workspace: $MDFENCE_WORK_DIR"
-ls -la "$MDFENCE_WORK_DIR"
+echo "Workspace: $MDJAM_WORK_DIR"
+ls -la "$MDJAM_WORK_DIR"
 ```
 
 ---
 
 ## Using the workspace
 
-All blocks share `$MDFENCE_WORK_DIR` — created once by setup, available everywhere.
+All blocks share `$MDJAM_WORK_DIR` — created once by setup, available everywhere.
 
 ```bash
 # ---
@@ -69,8 +69,8 @@ All blocks share `$MDFENCE_WORK_DIR` — created once by setup, available everyw
 # outputs:
 #   - data_file
 # ---
-DATA="$MDFENCE_WORK_DIR/response.json"
-curl -s "https://httpbin.org/get?hello=mdrun" -o "$DATA"
+DATA="$MDJAM_WORK_DIR/response.json"
+curl -s "https://httpbin.org/get?hello=mdjam" -o "$DATA"
 echo "::set-output name=data_file::$DATA"
 echo "Saved to: $DATA"
 wc -c < "$DATA"
@@ -84,7 +84,7 @@ wc -c < "$DATA"
 #   - fetch
 # ---
 echo "URL args received by httpbin:"
-jq '.args' "$MDFENCE_DATA_FILE"
+jq '.args' "$MDJAM_DATA_FILE"
 ```
 
 ```bash
@@ -94,11 +94,11 @@ jq '.args' "$MDFENCE_DATA_FILE"
 # depends:
 #   - parse
 # ---
-SUMMARY="$MDFENCE_WORK_DIR/summary.txt"
+SUMMARY="$MDJAM_WORK_DIR/summary.txt"
 {
-  echo "Fetched: $MDFENCE_DATA_FILE"
+  echo "Fetched: $MDJAM_DATA_FILE"
   echo "Date:    $(date)"
-  echo "Size:    $(wc -c < $MDFENCE_DATA_FILE) bytes"
+  echo "Size:    $(wc -c < $MDJAM_DATA_FILE) bytes"
 } > "$SUMMARY"
 
 cat "$SUMMARY"
@@ -109,7 +109,7 @@ echo "::set-output name=summary_file::$SUMMARY"
 
 ## Teardown
 
-When you press **q** to quit, mdrun runs the `teardown` script before exiting.
+When you press **q** to quit, mdjam runs the `teardown` script before exiting.
 In this document, teardown removes the whole `$WORK_DIR` workspace.
 
 The teardown output appears in a panel at the bottom of the screen just before exit.

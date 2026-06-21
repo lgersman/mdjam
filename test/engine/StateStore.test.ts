@@ -33,13 +33,13 @@ describe('StateStore', () => {
     expect(store.size()).toBe(0)
   })
 
-  it('toEnv produces MDFENCE_* prefixed entries', () => {
+  it('toEnv produces MDJAM_* prefixed entries', () => {
     const store = new StateStore()
     store.set('api_key', 'secret', null)
     store.set('HOST', 'localhost', null)
     const env = store.toEnv()
-    expect(env['MDFENCE_API_KEY']).toBe('secret')
-    expect(env['MDFENCE_HOST']).toBe('localhost')
+    expect(env['MDJAM_API_KEY']).toBe('secret')
+    expect(env['MDJAM_HOST']).toBe('localhost')
   })
 
   it('preserves source block in entry', () => {

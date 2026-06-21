@@ -32,7 +32,7 @@ echo "::set-output name=GREETING::Hello World"
 #     description: Message from step 1
 #     readonly: true
 # ---
-echo "Got: $MDFENCE_GREETING"
+echo "Got: $MDJAM_GREETING"
 ```
 
 ## A plain block (no metadata)

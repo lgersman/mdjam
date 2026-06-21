@@ -17,8 +17,8 @@ addDefaultParsers([{
   wasm: join(bashPkgDir, "tree-sitter-bash.wasm"),
   queries: { highlights: [join(bashPkgDir, "queries/highlights.scm")] }
 }]);
-var HELP = `Usage: mdrun <file> [options]
-       mdrun --stdin [options]
+var HELP = `Usage: mdjam <file> [options]
+       mdjam --stdin [options]
 
 Terminal markdown viewer with executable code fences
 
@@ -36,11 +36,11 @@ Options:
   --version          Show version
   --help             Show this help
 `;
-var AGENT_DOCS = `mdrun \u2014 execute bash code fences in a markdown document
+var AGENT_DOCS = `mdjam \u2014 execute bash code fences in a markdown document
 
 USAGE (non-interactive / agent):
-  printf '%s' "$MARKDOWN" | mdrun --stdin --delegate --no-watch
-  mdrun --delegate --no-watch <file.md>
+  printf '%s' "$MARKDOWN" | mdjam --stdin --delegate --no-watch
+  mdjam --delegate --no-watch <file.md>
 
 FLAGS FOR AGENTS:
   --stdin        Read markdown from stdin (watch disabled automatically)
@@ -55,7 +55,7 @@ EXIT CODES:
 
 AUTO-EXECUTION:
   Blocks marked auto:true run on load without keypresses.
-  mdrun exits when all auto blocks have finished and no interactive inputs are pending.
+  mdjam exits when all auto blocks have finished and no interactive inputs are pending.
 
 BLOCK METADATA (YAML comment header inside a bash fence):
   \`\`\`bash
@@ -71,7 +71,7 @@ OUTPUT PROTOCOL:
   echo "::set-output name=KEY::value"   # silent capture into state store
   export KEY=value                      # exported vars also captured into state store
 
-DOWNSTREAM BLOCKS receive state store values as MDFENCE_<KEY> environment variables.
+DOWNSTREAM BLOCKS receive state store values as MDJAM_<KEY> environment variables.
 
 EXAMPLE \u2014 pipe generated markdown, capture result:
   md=$(cat <<'EOF'
@@ -84,7 +84,7 @@ EXAMPLE \u2014 pipe generated markdown, capture result:
   \`\`\`
   EOF
   )
-  result=$(printf '%s' "$md" | mdrun --stdin --delegate --no-watch)
+  result=$(printf '%s' "$md" | mdjam --stdin --delegate --no-watch)
   echo "exit=$? result=$result"
 `;
 if (process.argv.length <= 2) {
@@ -158,5 +158,5 @@ if (values.stdin) {
   });
 }
 
-//# debugId=237E84D0A4932BFD64756E2164756E21
+//# debugId=E4455B5694CA6B5664756E2164756E21
 //# sourceMappingURL=cli.js.map

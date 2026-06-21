@@ -1,10 +1,10 @@
 {
-  "name": "mdrun",
+  "name": "mdjam",
   "version": "0.1.0",
   "description": "Terminal markdown viewer with executable code fences",
   "type": "module",
   "bin": {
-    "mdrun": "./dist/cli.js"
+    "mdjam": "./dist/cli.js"
   },
   "scripts": {
     "dev": "bun build src/cli.ts --outfile dist/cli.js --target bun --external '*' --sourcemap --watch",

@@ -61,13 +61,13 @@ describe('BlockRunner', () => {
     expect(store.get('NEW_VAR')).toBe('exported_value')
   })
 
-  it('injects MDFENCE_* env vars from state store', async () => {
+  it('injects MDJAM_* env vars from state store', async () => {
     const store = new StateStore()
     store.set('MY_TOKEN', 'abc123', null)
     const runner = new BlockRunner('test', store)
     const lines: string[] = []
     runner.on('output', (t: string) => lines.push(t))
-    await runner.run('echo "$MDFENCE_MY_TOKEN"')
+    await runner.run('echo "$MDJAM_MY_TOKEN"')
     expect(lines.join('').trim()).toBe('abc123')
   })
 })

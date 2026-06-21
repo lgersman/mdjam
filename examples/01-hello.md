@@ -1,8 +1,8 @@
 ---
-description: Hello — mdrun basics
+description: Hello — mdjam basics
 ---
 
-# Hello, mdrun
+# Hello, mdjam
 
 A terminal markdown viewer where bash code blocks run inline.
 Use **Tab** to move focus to a block, **Enter** to run it.
@@ -10,7 +10,7 @@ Use **Tab** to move focus to a block, **Enter** to run it.
 ## Your first block
 
 ```bash
-echo "Hello from mdrun!"
+echo "Hello from mdjam!"
 echo "Running as: $USER"
 echo "In: $PWD"
 ```

@@ -4,7 +4,7 @@ description: Markdown — rendering showcase
 
 # Markdown rendering showcase
 
-This document has no executable blocks — it shows how mdrun renders standard markdown.
+This document has no executable blocks — it shows how mdjam renders standard markdown.
 Scroll with `j`/`k`, jump with `g`/`G`, quit with `Ctrl+C`.
 
 ---
@@ -141,7 +141,7 @@ A bare URL: <https://example.com>
 
 An image (falls back to alt text in terminals that don't render images):
 
-![Terminal screenshot placeholder](https://placehold.co/400x200/1e1e2e/cdd6f4?text=mdrun)
+![Terminal screenshot placeholder](https://placehold.co/400x200/1e1e2e/cdd6f4?text=mdjam)
 
 ---
 

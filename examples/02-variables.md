@@ -8,7 +8,7 @@ defaults:
 # Variables
 
 Blocks share data through a **state store**.
-Outputs from one block become `$MDFENCE_*` environment variables available to all later blocks.
+Outputs from one block become `$MDJAM_*` environment variables available to all later blocks.
 
 Press **s** at any time to open the state panel and inspect current values.
 
@@ -19,14 +19,14 @@ Press **s** at any time to open the state panel and inspect current values.
 The frontmatter `defaults` section pre-populates the state store before any block runs.
 This document started with:
 
-- `$MDFENCE_GREETING` = `Hello`
-- `$MDFENCE_TARGET` = `World`
+- `$MDJAM_GREETING` = `Hello`
+- `$MDJAM_TARGET` = `World`
 
 ```bash
 # ---
 # description: Reads the document-level defaults
 # ---
-echo "$MDFENCE_GREETING, $MDFENCE_TARGET!"
+echo "$MDJAM_GREETING, $MDJAM_TARGET!"
 ```
 
 ---
@@ -34,7 +34,7 @@ echo "$MDFENCE_GREETING, $MDFENCE_TARGET!"
 ## Producing output with `::set-output`
 
 Use `echo "::set-output name=KEY::VALUE"` to write a named value into the state store.
-It becomes `$MDFENCE_KEY` (uppercased) in every block that runs afterward.
+It becomes `$MDJAM_KEY` (uppercased) in every block that runs afterward.
 
 ```bash
 # ---
@@ -61,9 +61,9 @@ echo "Dir : $WORK_DIR"
 # id: consume
 # description: Reads the values produced above
 # ---
-echo "build_tag → $MDFENCE_BUILD_TAG"
-echo "work_dir  → $MDFENCE_WORK_DIR"
-ls -la "$MDFENCE_WORK_DIR"
+echo "build_tag → $MDJAM_BUILD_TAG"
+echo "work_dir  → $MDJAM_WORK_DIR"
+ls -la "$MDJAM_WORK_DIR"
 ```
 
 ---
@@ -88,8 +88,8 @@ echo "Exported APP_NAME and APP_PORT — check the state panel (s)."
 # id: read-exports
 # description: Reads variables captured from the previous block
 # ---
-echo "APP_NAME : $MDFENCE_APP_NAME"
-echo "APP_PORT : $MDFENCE_APP_PORT"
+echo "APP_NAME : $MDJAM_APP_NAME"
+echo "APP_PORT : $MDJAM_APP_PORT"
 ```
 
 ---
@@ -111,11 +111,11 @@ Fill the fields, then press **Enter** to run.
 #     description: "Language: en / es / fr / de"
 #     default: en
 # ---
-case "$MDFENCE_LANG" in
-  es) echo "Hola, $MDFENCE_NAME!" ;;
-  fr) echo "Bonjour, $MDFENCE_NAME !" ;;
-  de) echo "Hallo, $MDFENCE_NAME!" ;;
-  *)  echo "Hello, $MDFENCE_NAME!" ;;
+case "$MDJAM_LANG" in
+  es) echo "Hola, $MDJAM_NAME!" ;;
+  fr) echo "Bonjour, $MDJAM_NAME !" ;;
+  de) echo "Hallo, $MDJAM_NAME!" ;;
+  *)  echo "Hello, $MDJAM_NAME!" ;;
 esac
 ```
 
@@ -135,7 +135,7 @@ Mark an input `readonly: true` to lock it — useful for values set by a previou
 #     description: Target filename
 #     default: release-notes.txt
 # ---
-echo "Build: $MDFENCE_BUILD_TAG" > "$MDFENCE_FILENAME"
-echo "Date:  $(date)" >> "$MDFENCE_FILENAME"
-cat "$MDFENCE_FILENAME"
+echo "Build: $MDJAM_BUILD_TAG" > "$MDJAM_FILENAME"
+echo "Date:  $(date)" >> "$MDJAM_FILENAME"
+cat "$MDJAM_FILENAME"
 ```

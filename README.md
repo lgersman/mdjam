@@ -1,4 +1,4 @@
-# mdrun
+# mdjam
 
 A terminal markdown viewer where bash code blocks can be executed inline. Scripts run, their output appears directly below the fence, values flow between blocks, and the whole thing stays in your terminal.
 
@@ -11,14 +11,14 @@ This project cannot run on Node.js. The TUI engine, `@opentui/core`, is a Zig-co
 ```bash
 bun install
 bun run build
-bun link          # makes `mdrun` available globally
+bun link          # makes `mdjam` available globally
 ```
 
 ## Usage
 
 ```
-mdrun [options] <file.md>
-mdrun --stdin [options]
+mdjam [options] <file.md>
+mdjam --stdin [options]
 
 Options:
   --stdin            Read markdown from stdin instead of a file
@@ -34,8 +34,8 @@ Options:
 `--stdin` is useful for piping dynamically generated markdown, e.g. from an AI agent:
 
 ```bash
-ai-agent "explain this error" | mdrun --stdin
-echo "# Hello\n\`\`\`bash\necho hi\n\`\`\`" | mdrun --stdin
+ai-agent "explain this error" | mdjam --stdin
+echo "# Hello\n\`\`\`bash\necho hi\n\`\`\`" | mdjam --stdin
 ```
 
 Watch mode is automatically disabled when reading from stdin.
@@ -151,10 +151,10 @@ export MY_KEY=my_value
 echo "MY_KEY is: $MY_KEY"
 ```
 
-Downstream blocks receive every state store value as `MDFENCE_<KEY>` environment variables:
+Downstream blocks receive every state store value as `MDJAM_<KEY>` environment variables:
 
 ```bash
-echo "MY_KEY is: $MDFENCE_MY_KEY"
+echo "MY_KEY is: $MDJAM_MY_KEY"
 ```
 
 Values written by a block with `id: my-block` are stored under both the bare key (`TOKEN`) and the namespaced key (`my-block.TOKEN`). Values written by `setup` use bare keys only.
@@ -171,9 +171,9 @@ Values written by a block with `id: my-block` are stored under both the bare key
 | `Cancelled` | Cancelled with `Esc` |
 | `Skipped — dep failed: <id>` | A dependency block failed |
 
-## Using mdrun as an agent tool
+## Using mdjam as an agent tool
 
-`mdrun --agent-docs` prints a compact reference optimised for pasting into a tool description field.
+`mdjam --agent-docs` prints a compact reference optimised for pasting into a tool description field.
 
 The non-interactive pattern: pipe markdown in via `--stdin`, mark blocks `auto: true` so they run without keypresses, and use `--delegate` to forward the focused block's stdout/stderr and exit code back to the caller.
 
@@ -184,23 +184,23 @@ Add this to your project's `CLAUDE.md` or `~/.claude/CLAUDE.md`:
 ```markdown
 ## Available tools
 
-**mdrun** — run a markdown runbook non-interactively and capture output.
+**mdjam** — run a markdown runbook non-interactively and capture output.
 
 Usage:
-  printf '%s' "$MARKDOWN" | mdrun --stdin --delegate --no-watch
+  printf '%s' "$MARKDOWN" | mdjam --stdin --delegate --no-watch
 
 - Mark bash fences with `auto: true` to execute them on load.
 - `--delegate` forwards the focused block's stdout/stderr and mirrors its exit code.
 - `echo "::set-output name=KEY::value"` inside a block captures KEY into the state store.
-- Run `mdrun --agent-docs` for full reference.
+- Run `mdjam --agent-docs` for full reference.
 ```
 
 ### Example — MCP / JSON tool definition
 
 ```json
 {
-  "name": "mdrun",
-  "description": "<paste output of: mdrun --agent-docs>",
+  "name": "mdjam",
+  "description": "<paste output of: mdjam --agent-docs>",
   "inputSchema": {
     "type": "object",
     "required": ["markdown"],
@@ -220,7 +220,7 @@ The wrapper script that bridges the JSON call to the CLI:
 #!/usr/bin/env bash
 # reads {"markdown":"..."} from stdin, runs it, returns stdout
 markdown=$(jq -r '.markdown')
-printf '%s' "$markdown" | mdrun --stdin --delegate --no-watch
+printf '%s' "$markdown" | mdjam --stdin --delegate --no-watch
 ```
 
 ## Development

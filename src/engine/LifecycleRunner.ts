@@ -20,7 +20,7 @@ export class LifecycleRunner extends EventEmitter {
   }
 
   private async runScript(label: string, script: string): Promise<number> {
-    const captureFile = join(tmpdir(), `mdrun_${label}_${process.pid}.env`)
+    const captureFile = join(tmpdir(), `mdjam_${label}_${process.pid}.env`)
 
     const wrappedScript = [...scriptPreamble(captureFile), script].join('\n')
 
@@ -91,7 +91,7 @@ export class LifecycleRunner extends EventEmitter {
       const value = m[2] ?? ''
 
       if (key in prevEnv) continue
-      if (key.startsWith('MDFENCE_') || key === '_MDRUN_CAP') continue
+      if (key.startsWith('MDJAM_') || key === '_MDJAM_CAP') continue
 
       // Lifecycle scripts use bare key only
       this.stateStore.set(key, value, null)

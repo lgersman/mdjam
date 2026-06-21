@@ -57,16 +57,16 @@ export class BlockRunner extends EventEmitter {
     this.stderrLines.length = 0
     this.setStatus('running')
 
-    const captureFile = join(tmpdir(), `mdrun_${this.blockId.replace(/[^a-z0-9]/gi, '_')}_${process.pid}.env`)
+    const captureFile = join(tmpdir(), `mdjam_${this.blockId.replace(/[^a-z0-9]/gi, '_')}_${process.pid}.env`)
 
     // Wrap script: capture exports on exit + intercept ::set-output so the value
-    // is also available to subsequent lines in the same block via MDFENCE_*.
+    // is also available to subsequent lines in the same block via MDJAM_*.
     const wrappedScript = [
       ...scriptPreamble(captureFile),
       `function echo() {`,
       `  command echo "$@"`,
       `  if [[ "$*" =~ ^'::set-output name='([^:]+)'::'(.*) ]]; then`,
-      `    export "MDFENCE_\${BASH_REMATCH[1]^^}=\${BASH_REMATCH[2]}"`,
+      `    export "MDJAM_\${BASH_REMATCH[1]^^}=\${BASH_REMATCH[2]}"`,
       `  fi`,
       `}`,
       script,
@@ -134,7 +134,7 @@ export class BlockRunner extends EventEmitter {
     this.stderrLines.length = 0
     this.setStatus('running')
 
-    const prefix = `mdrun_${this.blockId.replace(/[^a-z0-9]/gi, '_')}_${process.pid}`
+    const prefix = `mdjam_${this.blockId.replace(/[^a-z0-9]/gi, '_')}_${process.pid}`
     const captureFile = join(tmpdir(), `${prefix}.env`)
     const scriptFile  = join(tmpdir(), `${prefix}.sh`)
     const recordFile  = join(tmpdir(), `${prefix}.rec`)
@@ -144,7 +144,7 @@ export class BlockRunner extends EventEmitter {
       `function echo() {`,
       `  command echo "$@"`,
       `  if [[ "$*" =~ ^'::set-output name='([^:]+)'::'(.*) ]]; then`,
-      `    export "MDFENCE_\${BASH_REMATCH[1]^^}=\${BASH_REMATCH[2]}"`,
+      `    export "MDJAM_\${BASH_REMATCH[1]^^}=\${BASH_REMATCH[2]}"`,
       `  fi`,
       `}`,
       script,
@@ -249,7 +249,7 @@ export class BlockRunner extends EventEmitter {
       // Skip vars that existed before the block ran
       if (key in prevEnv) continue
       // Skip injected and internal vars
-      if (key.startsWith('MDFENCE_') || key === '_MDRUN_CAP') continue
+      if (key.startsWith('MDJAM_') || key === '_MDJAM_CAP') continue
 
       this.stateStore.set(key, value, this.blockId)
       this.stateStore.set(`${this.blockId}.${key}`, value, this.blockId)

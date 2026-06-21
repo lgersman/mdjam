@@ -38,11 +38,11 @@ export class StateStore extends EventEmitter {
     this.emit('reset')
   }
 
-  /** Build MDFENCE_<KEY>=<VALUE> environment object from store contents. */
+  /** Build MDJAM_<KEY>=<VALUE> environment object from store contents. */
   toEnv(): Record<string, string> {
     const env: Record<string, string> = {}
     for (const [key, entry] of this.store) {
-      env[`MDFENCE_${key.toUpperCase()}`] = entry.value
+      env[`MDJAM_${key.toUpperCase()}`] = entry.value
     }
     return env
   }

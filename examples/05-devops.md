@@ -14,9 +14,9 @@ setup: |
   echo "Runbook session started at $(cat $RUNBOOK_DIR/session_start)"
 teardown: |
   END=$(date -Iseconds)
-  START=$(cat "$MDFENCE_RUNBOOK_DIR/session_start" 2>/dev/null || echo "unknown")
+  START=$(cat "$MDJAM_RUNBOOK_DIR/session_start" 2>/dev/null || echo "unknown")
   echo "Session: $START → $END"
-  rm -rf "$MDFENCE_RUNBOOK_DIR"
+  rm -rf "$MDJAM_RUNBOOK_DIR"
   echo "Runbook session closed."
 defaults:
   environment: staging
@@ -26,7 +26,7 @@ defaults:
 
 # Deployment Runbook
 
-This runbook walks through a full application deployment using mdrun features:
+This runbook walks through a full application deployment using mdjam features:
 
 - **Prerequisites** — verify `git` and `docker` are available
 - **Setup / Teardown** — shared workspace, session logging
@@ -45,14 +45,14 @@ This runbook walks through a full application deployment using mdrun features:
 # description: Prints the current deployment context
 # ---
 echo "=== Deployment Context ==="
-echo "Environment : $MDFENCE_ENVIRONMENT"
-echo "Image       : $MDFENCE_IMAGE_NAME"
-echo "Registry    : $MDFENCE_REGISTRY"
+echo "Environment : $MDJAM_ENVIRONMENT"
+echo "Image       : $MDJAM_IMAGE_NAME"
+echo "Registry    : $MDJAM_REGISTRY"
 echo "Operator    : ${USER:-unknown}"
 echo "Host        : $(hostname)"
 echo "Docker      : $(docker --version 2>/dev/null || echo 'not available')"
 echo "Git         : $(git --version)"
-echo "Session dir : $MDFENCE_RUNBOOK_DIR"
+echo "Session dir : $MDJAM_RUNBOOK_DIR"
 ```
 
 ---
@@ -81,14 +81,14 @@ Fill in the inputs and press **Enter** to confirm before proceeding.
 #   - registry
 #   - full_image
 # ---
-FULL_IMAGE="$MDFENCE_REGISTRY/$MDFENCE_IMAGE_NAME:$MDFENCE_IMAGE_TAG"
-echo "::set-output name=environment::$MDFENCE_ENVIRONMENT"
-echo "::set-output name=image_tag::$MDFENCE_IMAGE_TAG"
-echo "::set-output name=registry::$MDFENCE_REGISTRY"
+FULL_IMAGE="$MDJAM_REGISTRY/$MDJAM_IMAGE_NAME:$MDJAM_IMAGE_TAG"
+echo "::set-output name=environment::$MDJAM_ENVIRONMENT"
+echo "::set-output name=image_tag::$MDJAM_IMAGE_TAG"
+echo "::set-output name=registry::$MDJAM_REGISTRY"
 echo "::set-output name=full_image::$FULL_IMAGE"
 
 echo "Target confirmed:"
-echo "  Environment : $MDFENCE_ENVIRONMENT"
+echo "  Environment : $MDJAM_ENVIRONMENT"
 echo "  Image       : $FULL_IMAGE"
 ```
 
@@ -128,7 +128,7 @@ else
 fi
 
 # Check registry reachability (ping only)
-if ping -c1 -W2 "${MDFENCE_REGISTRY%%/*}" &>/dev/null 2>&1; then
+if ping -c1 -W2 "${MDJAM_REGISTRY%%/*}" &>/dev/null 2>&1; then
   echo "✓ Registry host reachable"
 else
   echo "⚠ Registry host unreachable (continuing anyway)"
@@ -158,18 +158,18 @@ echo "All pre-flight checks passed."
 #   - image_id
 #   - build_log
 # ---
-LOG="$MDFENCE_RUNBOOK_DIR/logs/build.log"
+LOG="$MDJAM_RUNBOOK_DIR/logs/build.log"
 IMAGE_ID="sha256:$(openssl rand -hex 32 2>/dev/null | head -c 12)…(simulated)"
 
-echo "Building $MDFENCE_FULL_IMAGE..."
+echo "Building $MDJAM_FULL_IMAGE..."
 echo "  context  : $PWD"
 echo "  log file : $LOG"
 
 {
   echo "=== Build Log ==="
-  echo "image: $MDFENCE_FULL_IMAGE"
+  echo "image: $MDJAM_FULL_IMAGE"
   echo "time:  $(date -Iseconds)"
-  echo "git:   $MDFENCE_GIT_COMMIT"
+  echo "git:   $MDJAM_GIT_COMMIT"
 } > "$LOG"
 
 echo "::set-output name=image_id::$IMAGE_ID"
@@ -191,9 +191,9 @@ echo "Build log written to $LOG"
 # outputs:
 #   - test_report
 # ---
-REPORT="$MDFENCE_RUNBOOK_DIR/logs/test-report.txt"
+REPORT="$MDJAM_RUNBOOK_DIR/logs/test-report.txt"
 
-echo "Running smoke tests on $MDFENCE_IMAGE_ID..."
+echo "Running smoke tests on $MDJAM_IMAGE_ID..."
 
 # Simulated test suite
 TESTS=(
@@ -213,7 +213,7 @@ done
 {
   echo "Test Report"
   echo "==========="
-  echo "Image:  $MDFENCE_IMAGE_ID"
+  echo "Image:  $MDJAM_IMAGE_ID"
   echo "Passed: $PASSED / ${#TESTS[@]}"
   echo "Date:   $(date -Iseconds)"
 } > "$REPORT"
@@ -236,12 +236,12 @@ echo "$PASSED/${#TESTS[@]} tests passed."
 #   - digest
 # ---
 DIGEST="sha256:$(openssl rand -hex 32 2>/dev/null | head -c 16)"
-echo "Pushing $MDFENCE_FULL_IMAGE..."
+echo "Pushing $MDJAM_FULL_IMAGE..."
 sleep 0.3
 echo "Pushed. Digest: $DIGEST"
 echo "::set-output name=digest::$DIGEST"
 
-echo "Push complete: $MDFENCE_REGISTRY/$MDFENCE_IMAGE_NAME@$DIGEST"
+echo "Push complete: $MDJAM_REGISTRY/$MDJAM_IMAGE_NAME@$DIGEST"
 ```
 
 ---
@@ -261,11 +261,11 @@ echo "Push complete: $MDFENCE_REGISTRY/$MDFENCE_IMAGE_NAME@$DIGEST"
 # outputs:
 #   - deployment_url
 # ---
-URL="https://$MDFENCE_ENVIRONMENT.example.com"
+URL="https://$MDJAM_ENVIRONMENT.example.com"
 
-echo "Rolling out to $MDFENCE_ENVIRONMENT..."
-echo "  Image  : $MDFENCE_FULL_IMAGE"
-echo "  Digest : $MDFENCE_DIGEST"
+echo "Rolling out to $MDJAM_ENVIRONMENT..."
+echo "  Image  : $MDJAM_FULL_IMAGE"
+echo "  Digest : $MDJAM_DIGEST"
 
 sleep 0.5
 echo "Rollout complete."
@@ -285,9 +285,9 @@ echo "Live at: $URL"
 #   - deploy
 # ---
 echo "=== Post-Deploy Verification ==="
-echo "URL    : $MDFENCE_DEPLOYMENT_URL"
-echo "Image  : $MDFENCE_FULL_IMAGE"
-echo "Digest : $MDFENCE_DIGEST"
+echo "URL    : $MDJAM_DEPLOYMENT_URL"
+echo "Image  : $MDJAM_FULL_IMAGE"
+echo "Digest : $MDJAM_DIGEST"
 echo ""
 echo "Simulating health check..."
 sleep 0.2
@@ -296,14 +296,14 @@ echo "✓ Health check passed"
 # Write summary to session log
 {
   echo "--- Deployment Summary ---"
-  echo "Environment : $MDFENCE_ENVIRONMENT"
-  echo "Image       : $MDFENCE_FULL_IMAGE"
-  echo "Digest      : $MDFENCE_DIGEST"
-  echo "URL         : $MDFENCE_DEPLOYMENT_URL"
+  echo "Environment : $MDJAM_ENVIRONMENT"
+  echo "Image       : $MDJAM_FULL_IMAGE"
+  echo "Digest      : $MDJAM_DIGEST"
+  echo "URL         : $MDJAM_DEPLOYMENT_URL"
   echo "Verified    : $(date -Iseconds)"
-} >> "$MDFENCE_RUNBOOK_DIR/logs/build.log"
+} >> "$MDJAM_RUNBOOK_DIR/logs/build.log"
 
-cat "$MDFENCE_RUNBOOK_DIR/logs/build.log"
+cat "$MDJAM_RUNBOOK_DIR/logs/build.log"
 ```
 
 ---
@@ -324,7 +324,7 @@ Run only if a deployment needs to be reverted — independent of the deploy chai
 #     description: Tag to roll back to
 #     default: stable
 # ---
-echo "Rolling back $MDFENCE_ENVIRONMENT to :$MDFENCE_ROLLBACK_TAG..."
+echo "Rolling back $MDJAM_ENVIRONMENT to :$MDJAM_ROLLBACK_TAG..."
 sleep 0.3
-echo "✓ Rollback complete — $MDFENCE_ENVIRONMENT is now running :$MDFENCE_ROLLBACK_TAG"
+echo "✓ Rollback complete — $MDJAM_ENVIRONMENT is now running :$MDJAM_ROLLBACK_TAG"
 ```

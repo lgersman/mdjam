@@ -63,7 +63,7 @@ Run **deploy** below — `pick-env` runs first automatically.
 # depends:
 #   - pick-env
 # ---
-echo "Deploying to: $MDFENCE_ENV"
+echo "Deploying to: $MDJAM_ENV"
 sleep 0.5
 echo "✓ Deployed (simulated)"
 ```
@@ -83,7 +83,7 @@ exported so a downstream block can read it.
 # outputs:
 #   - config_path
 # ---
-config=$(mktemp /tmp/mdrun-config-XXXX.toml)
+config=$(mktemp /tmp/mdjam-config-XXXX.toml)
 cat > "$config" <<'EOF'
 [server]
 host = "localhost"
@@ -104,8 +104,8 @@ echo "Saved: $config"
 # depends:
 #   - edit-config
 # ---
-echo "=== $MDFENCE_CONFIG_PATH ==="
-cat "$MDFENCE_CONFIG_PATH"
+echo "=== $MDJAM_CONFIG_PATH ==="
+cat "$MDJAM_CONFIG_PATH"
 ```
 
 ---

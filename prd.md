@@ -79,8 +79,8 @@ setup: |
   export API_URL=https://api.example.com
   export ENV=staging
 teardown: |
-  echo "Session ended. Deployed revision: $MDFENCE_DEPLOY_REVISION"
-  kubectl delete pod "$MDFENCE_TEMP_POD" 2>/dev/null || true
+  echo "Session ended. Deployed revision: $MDJAM_DEPLOY_REVISION"
+  kubectl delete pod "$MDJAM_TEMP_POD" 2>/dev/null || true
 ---
 ```
 
@@ -147,7 +147,7 @@ echo "::set-output name=API_HOST::$API_HOST"
 - **FR-16** Each executable code fence renders a status indicator and a keyboard hint for manual execution (e.g., `[Enter] Run`).
 - **FR-17** When executed, the block spawns a child process (`/bin/bash -c`) with:
   - The fence body (minus metadata comment lines) as the script, with a trailing `export -p` sentinel injected to capture exported variables after execution.
-  - The current state store exported as environment variables (`MDFENCE_<KEY>`).
+  - The current state store exported as environment variables (`MDJAM_<KEY>`).
 - **FR-18** Stdout and stderr are streamed and displayed in an output panel directly below the fence, rendered as plain text with ANSI color passthrough.
 - **FR-19** The output panel shows a running execution indicator while the process is live.
 - **FR-20** On process exit, the status indicator updates to success (exit 0) or failure (non-zero), with the exit code shown.
@@ -168,7 +168,7 @@ echo "::set-output name=MY_KEY::my_value"
 - **FR-24** The viewer intercepts lines matching `::set-output name=<KEY>::<VALUE>` from a block's stdout. Intercepted lines are consumed and not shown in the output panel.
 - **FR-41** In addition to `::set-output`, the viewer captures variables exported via plain `export VAR=value` inside the script. After process exit, the viewer diffs the exported environment against the pre-execution snapshot and writes new or changed variables into the state store. Variables that were already present in the environment before the block ran are ignored.
 - **FR-25** Values written to the state store (via `::set-output` or `export` capture) use `<block-id>.<KEY>` as the canonical namespaced key; the bare `<KEY>` also resolves to the most recently set value of that name across all blocks. Values originating from the `setup` script use bare `<KEY>` only, with no namespace prefix.
-- **FR-26** When a block is executed, all values currently in the state store are injected into its environment as `MDFENCE_<KEY>` variables, giving the script access to every previously exported value.
+- **FR-26** When a block is executed, all values currently in the state store are injected into its environment as `MDJAM_<KEY>` variables, giving the script access to every previously exported value.
 - **FR-27** The state store is in-memory and reset when the document is reloaded or the viewer exits.
 - **FR-28** The state panel (toggled with `s`) shows all current state store entries, their values, and the block ID that last set each entry.
 
@@ -187,10 +187,10 @@ echo "::set-output name=MY_KEY::my_value"
 ### 6.9 Lifecycle Scripts
 
 - **FR-35** Frontmatter may declare a `setup` bash script (multi-line string). It runs once after prerequisites pass and before any content is rendered or auto-execute blocks fire.
-- **FR-36** The `setup` script populates the state store via two mechanisms: plain shell `export VAR=value` (captured via env diff after exit, same as FR-41) and the `::set-output name=KEY::VALUE` syntax. Both write into the state store using bare `<KEY>` (no namespace prefix) and are available to all code blocks as `MDFENCE_<KEY>` environment variables.
+- **FR-36** The `setup` script populates the state store via two mechanisms: plain shell `export VAR=value` (captured via env diff after exit, same as FR-41) and the `::set-output name=KEY::VALUE` syntax. Both write into the state store using bare `<KEY>` (no namespace prefix) and are available to all code blocks as `MDJAM_<KEY>` environment variables.
 - **FR-37** If `setup` exits with a non-zero code, a prominent error panel is shown at the top of the document (above all content) and all code fence execution is blocked.
 - **FR-38** Frontmatter may declare a `teardown` bash script. It runs when the viewer exits normally (user presses `Ctrl+C` or the process receives `SIGTERM`).
-- **FR-39** The full final state store is injected into the `teardown` script's environment as `MDFENCE_*` variables, giving it access to every value produced during the session. `::set-output` lines emitted by `teardown` are silently consumed and not displayed, as no downstream consumers exist at exit time.
+- **FR-39** The full final state store is injected into the `teardown` script's environment as `MDJAM_*` variables, giving it access to every value produced during the session. `::set-output` lines emitted by `teardown` are silently consumed and not displayed, as no downstream consumers exist at exit time.
 - **FR-40** `teardown` output is displayed in a dedicated exit panel that renders briefly before the viewer closes.
 
 ---
@@ -239,7 +239,7 @@ echo "::set-output name=MY_KEY::my_value"
 ## 8. CLI Interface
 
 ```
-mdrun [options] <file.md>
+mdjam [options] <file.md>
 
 Options:
   --no-auto          Suppress auto-execution of auto:true blocks
@@ -294,7 +294,7 @@ MarkdownRenderable         (@opentui/core)
         └─ OutputPanel     (streaming stdout/stderr, collapsible)
 
 on viewer exit →
-LifecycleRunner.teardown   (runs teardown script with full StateStore as MDFENCE_* env)
+LifecycleRunner.teardown   (runs teardown script with full StateStore as MDJAM_* env)
   │  output → TeardownPanel rendered briefly before process exits
 ```
 
@@ -310,7 +310,7 @@ ExecutionEngine
   └─ BlockRunner
        ├─ strips metadata comment lines from script body
        ├─ snapshots env before execution; diffs after to capture plain exports
-       ├─ injects StateStore as MDFENCE_* environment variables
+       ├─ injects StateStore as MDJAM_* environment variables
        ├─ spawns /bin/bash -c <script>
        ├─ intercepts ::set-output lines → StateStore.set() (namespaced <block-id>.KEY)
        └─ pipes remaining stdout/stderr → OutputPanel stream
@@ -346,7 +346,7 @@ App
 ## 10. Proposed File Structure
 
 ```
-mdrun/
+mdjam/
 ├─ src/
 │   ├─ cli.ts                  entry point, arg parsing
 │   ├─ app.ts                  top-level TUI app component

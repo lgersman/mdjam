@@ -5,7 +5,7 @@ description: Pipeline — block dependencies
 # Pipeline
 
 Blocks can declare `depends` — a list of block IDs that must succeed first.
-When you run a block, mdrun automatically runs its full dependency chain in order.
+When you run a block, mdjam automatically runs its full dependency chain in order.
 
 You can run any single block and the whole upstream chain executes automatically.
 Try running **deploy** and watch install → build → test → deploy run in sequence.
@@ -45,14 +45,14 @@ Depends on `install`. If install failed this block shows **dep-failed**.
 # outputs:
 #   - artifact
 # ---
-echo "Building from $MDFENCE_WORKSPACE/src..."
+echo "Building from $MDJAM_WORKSPACE/src..."
 
 # "Compile" — copy + chmod
-cp "$MDFENCE_WORKSPACE/src/main.sh" "$MDFENCE_WORKSPACE/bin/app"
-chmod +x "$MDFENCE_WORKSPACE/bin/app"
+cp "$MDJAM_WORKSPACE/src/main.sh" "$MDJAM_WORKSPACE/bin/app"
+chmod +x "$MDJAM_WORKSPACE/bin/app"
 
-echo "::set-output name=artifact::$MDFENCE_WORKSPACE/bin/app"
-echo "Artifact: $MDFENCE_ARTIFACT"
+echo "::set-output name=artifact::$MDJAM_WORKSPACE/bin/app"
+echo "Artifact: $MDJAM_ARTIFACT"
 ```
 
 ## Step 3 — Test
@@ -68,9 +68,9 @@ Depends on `build`.
 # ---
 echo "Running tests..."
 
-[ -f "$MDFENCE_ARTIFACT" ]           && echo "✓ Artifact exists"   || { echo "✗ Artifact missing"; exit 1; }
-[ -x "$MDFENCE_ARTIFACT" ]           && echo "✓ Artifact is executable" || { echo "✗ Not executable"; exit 1; }
-OUTPUT=$("$MDFENCE_ARTIFACT")
+[ -f "$MDJAM_ARTIFACT" ]           && echo "✓ Artifact exists"   || { echo "✗ Artifact missing"; exit 1; }
+[ -x "$MDJAM_ARTIFACT" ]           && echo "✓ Artifact is executable" || { echo "✗ Not executable"; exit 1; }
+OUTPUT=$("$MDJAM_ARTIFACT")
 [ "$OUTPUT" = "app v1.0" ]           && echo "✓ Output matches"    || { echo "✗ Wrong output: $OUTPUT"; exit 1; }
 
 echo "All tests passed."
@@ -87,10 +87,10 @@ Run this block to trigger the full chain: install → build → test → deploy.
 # depends:
 #   - test
 # ---
-echo "Deploying $MDFENCE_ARTIFACT..."
+echo "Deploying $MDJAM_ARTIFACT..."
 echo "Simulating upload to registry..."
 sleep 0.5
-echo "✓ Deployed successfully (tag: $(basename $MDFENCE_WORKSPACE))"
+echo "✓ Deployed successfully (tag: $(basename $MDJAM_WORKSPACE))"
 ```
 
 ---
@@ -107,8 +107,8 @@ Both `lint` and `build` can run independently — only `package` needs both.
 # depends:
 #   - install
 # ---
-echo "Linting $MDFENCE_WORKSPACE/src..."
-grep -rn "echo" "$MDFENCE_WORKSPACE/src" && echo "✓ Lint passed"
+echo "Linting $MDJAM_WORKSPACE/src..."
+grep -rn "echo" "$MDJAM_WORKSPACE/src" && echo "✓ Lint passed"
 ```
 
 ```bash
@@ -121,8 +121,8 @@ grep -rn "echo" "$MDFENCE_WORKSPACE/src" && echo "✓ Lint passed"
 # outputs:
 #   - tarball
 # ---
-TAR="$MDFENCE_WORKSPACE/release.tar.gz"
-tar -czf "$TAR" -C "$MDFENCE_WORKSPACE" bin/
+TAR="$MDJAM_WORKSPACE/release.tar.gz"
+tar -czf "$TAR" -C "$MDJAM_WORKSPACE" bin/
 echo "::set-output name=tarball::$TAR"
 echo "Packaged: $TAR ($(du -h $TAR | cut -f1))"
 ```
@@ -138,6 +138,6 @@ echo "Packaged: $TAR ($(du -h $TAR | cut -f1))"
 # depends:
 #   - install
 # ---
-rm -rf "$MDFENCE_WORKSPACE"
-echo "Removed $MDFENCE_WORKSPACE"
+rm -rf "$MDJAM_WORKSPACE"
+echo "Removed $MDJAM_WORKSPACE"
 ```

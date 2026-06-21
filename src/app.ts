@@ -762,7 +762,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       renderer.destroy()
       const runner = focused instanceof CodeFenceRenderable ? focused.runner : null
       if (!runner || runner.exitCode === null) {
-        process.stderr.write('mdrun: selected block was not executed\n')
+        process.stderr.write('mdjam: selected block was not executed\n')
         process.exit(-1)
       }
       for (const line of runner.stdoutLines) process.stdout.write(line)

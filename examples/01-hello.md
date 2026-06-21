@@ -67,4 +67,4 @@ exit 1
 | `g` / `G` | Jump to top / bottom |
 | `r` | Reload the document |
 | `s` | Toggle state panel |
-| `q` | Quit (runs teardown if defined) |
+| `Ctrl+C` | Quit (runs teardown if defined) |

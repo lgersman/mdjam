@@ -67,7 +67,7 @@ teardown: |
 | `prerequisites.tools` | CLI tools that must be on `$PATH` before the viewer starts |
 | `prerequisites.env` | Environment variables that must be set before the viewer starts |
 | `setup` | Bash script that runs once after prerequisites pass, before rendering |
-| `teardown` | Bash script that runs on quit (`q` or `SIGTERM`) |
+| `teardown` | Bash script that runs on quit (`Ctrl+C` or `SIGTERM`) |
 
 If any prerequisite is unmet, a diagnostic panel is shown and all code fence execution is blocked. If `setup` exits non-zero, an error panel is shown at the top and execution is blocked.
 

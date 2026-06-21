@@ -189,7 +189,7 @@ echo "::set-output name=MY_KEY::my_value"
 - **FR-35** Frontmatter may declare a `setup` bash script (multi-line string). It runs once after prerequisites pass and before any content is rendered or auto-execute blocks fire.
 - **FR-36** The `setup` script populates the state store via two mechanisms: plain shell `export VAR=value` (captured via env diff after exit, same as FR-41) and the `::set-output name=KEY::VALUE` syntax. Both write into the state store using bare `<KEY>` (no namespace prefix) and are available to all code blocks as `MDFENCE_<KEY>` environment variables.
 - **FR-37** If `setup` exits with a non-zero code, a prominent error panel is shown at the top of the document (above all content) and all code fence execution is blocked.
-- **FR-38** Frontmatter may declare a `teardown` bash script. It runs when the viewer exits normally (user presses `q` or the process receives `SIGTERM`).
+- **FR-38** Frontmatter may declare a `teardown` bash script. It runs when the viewer exits normally (user presses `Ctrl+C` or the process receives `SIGTERM`).
 - **FR-39** The full final state store is injected into the `teardown` script's environment as `MDFENCE_*` variables, giving it access to every value produced during the session. `::set-output` lines emitted by `teardown` are silently consumed and not displayed, as no downstream consumers exist at exit time.
 - **FR-40** `teardown` output is displayed in a dedicated exit panel that renders briefly before the viewer closes.
 
@@ -212,7 +212,7 @@ echo "::set-output name=MY_KEY::my_value"
 | `Esc` | Cancel focused input edit / cancel running block |
 | `r` | Reload document |
 | `s` | Toggle state store panel |
-| `q` | Quit |
+| `Ctrl+C` | Quit |
 
 ### 7.2 Focus Model
 

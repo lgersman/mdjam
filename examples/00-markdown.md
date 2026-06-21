@@ -5,7 +5,7 @@ description: Markdown — rendering showcase
 # Markdown rendering showcase
 
 This document has no executable blocks — it shows how mdrun renders standard markdown.
-Scroll with `j`/`k`, jump with `g`/`G`, quit with `q`.
+Scroll with `j`/`k`, jump with `g`/`G`, quit with `Ctrl+C`.
 
 ---
 

@@ -1,5 +1,6 @@
 import {
   createCliRenderer,
+  CliRenderEvents,
   MarkdownRenderable,
   BoxRenderable,
   CodeRenderable,
@@ -530,9 +531,13 @@ export async function runApp(options: AppOptions): Promise<void> {
     const focused = renderer.currentFocusedRenderable
 
     if (focused instanceof CodeFenceRenderable) {
+      setChildFocusedFence(null)
+      frontmatterPanel?.setChildFocused(false)
       bottomStatusBar.setContext('codeblock')
       attachFenceStatusListener(focused)
     } else if (focused instanceof TocRenderable) {
+      setChildFocusedFence(null)
+      frontmatterPanel?.setChildFocused(false)
       bottomStatusBar.setContext('markdown')
       attachFenceStatusListener(null)
     } else if (focused instanceof InputRenderable) {
@@ -542,17 +547,25 @@ export async function runApp(options: AppOptions): Promise<void> {
         (i.kind === 'fm-input' && i.input === focused)
       )
       if (item?.kind === 'input') {
+        setChildFocusedFence(item.fence)
+        frontmatterPanel?.setChildFocused(false)
         bottomStatusBar.setContext('block-input')
         attachFenceStatusListener(item.fence)
       } else {
+        setChildFocusedFence(null)
+        frontmatterPanel?.setChildFocused(item?.kind === 'fm-input')
         bottomStatusBar.setContext('fm-input')
         attachFenceStatusListener(null)
       }
     } else {
+      setChildFocusedFence(null)
+      frontmatterPanel?.setChildFocused(false)
       attachFenceStatusListener(null)
       bottomStatusBar.setContext('markdown')
     }
   }
+
+  renderer.on(CliRenderEvents.FOCUSED_RENDERABLE, updateStatusBar)
 
   function focusNext(delta: 1 | -1): void {
     const items = buildFocusList()
@@ -580,27 +593,18 @@ export async function runApp(options: AppOptions): Promise<void> {
 
     const item = items[nextIndex]
     if (item.kind === 'fence') {
-      setChildFocusedFence(null)
-      frontmatterPanel?.setChildFocused(false)
       item.fence.focus()
       scrollBox.scrollChildIntoView(item.fence.id)
     } else if (item.kind === 'input') {
-      setChildFocusedFence(item.fence)
-      frontmatterPanel?.setChildFocused(false)
       item.input.focus()
       scrollBox.scrollChildIntoView(item.fence.id)
     } else if (item.kind === 'toc') {
-      setChildFocusedFence(null)
-      frontmatterPanel?.setChildFocused(false)
       item.toc.focus()
       scrollBox.scrollChildIntoView(item.toc.id)
     } else {
-      setChildFocusedFence(null)
-      frontmatterPanel?.setChildFocused(true)
       item.input.focus()
       scrollBox.scrollChildIntoView(item.panel.id)
     }
-    updateStatusBar()
   }
 
   // Global keyboard handler
@@ -642,12 +646,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     // Skip global navigation when a text input has focus
     const focused = renderer.currentFocusedRenderable
     if (focused instanceof InputRenderable) {
-      if (key.name === 'escape') {
-        focused.blur()
-        setChildFocusedFence(null)
-        frontmatterPanel?.setChildFocused(false)
-        updateStatusBar()
-      }
+      if (key.name === 'escape') focused.blur()
       return
     }
 

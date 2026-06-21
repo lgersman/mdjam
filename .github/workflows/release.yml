@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Read version
+        id: version
+        run: echo "version=$(bun -e "console.log(require('./package.json').version)")" >> "$GITHUB_OUTPUT"
+
+      - name: Build release artifacts
+        run: bun run release
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
+
+      - name: Create GitHub release
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" \
+            --title "mdjam v${{ steps.version.outputs.version }}" \
+            --generate-notes \
+            release/mdjam-v${{ steps.version.outputs.version }}/*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,10 +1,21 @@
 #!/usr/bin/env bun
 import { parseArgs } from 'node:util'
-import { resolve } from 'node:path'
+import { resolve, dirname, join } from 'node:path'
 import { existsSync } from 'node:fs'
-import './setup-parsers.js'
+import { createRequire } from 'node:module'
+import { addDefaultParsers } from '@opentui/core'
 import { runApp } from './app.js'
 import type { ThemeName } from './theme/themes.js'
+import pkg from '../package.json'
+
+const _require = createRequire(import.meta.url)
+const bashPkgDir = dirname(_require.resolve('tree-sitter-bash/package.json'))
+addDefaultParsers([{
+  filetype: 'bash',
+  aliases: ['sh', 'shell'],
+  wasm: join(bashPkgDir, 'tree-sitter-bash.wasm'),
+  queries: { highlights: [join(bashPkgDir, 'queries/highlights.scm')] },
+}])
 
 const HELP = `\
 Usage: mdrun <file> [options]
@@ -49,7 +60,7 @@ if (values.help) {
 }
 
 if (values.version) {
-  process.stdout.write('0.1.0\n')
+  process.stdout.write(`${pkg.version}\n`)
   process.exit(0)
 }
 

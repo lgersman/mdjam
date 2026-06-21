@@ -3,10 +3,20 @@
 
 // src/cli.ts
 import { parseArgs } from "util";
-import { resolve } from "path";
+import { resolve, dirname, join } from "path";
 import { existsSync } from "fs";
-import"./setup-parsers.js";
+import { createRequire } from "module";
+import { addDefaultParsers } from "@opentui/core";
 import { runApp } from "./app.js";
+import pkg from "../package.json";
+var _require = createRequire(import.meta.url);
+var bashPkgDir = dirname(_require.resolve("tree-sitter-bash/package.json"));
+addDefaultParsers([{
+  filetype: "bash",
+  aliases: ["sh", "shell"],
+  wasm: join(bashPkgDir, "tree-sitter-bash.wasm"),
+  queries: { highlights: [join(bashPkgDir, "queries/highlights.scm")] }
+}]);
 var HELP = `Usage: mdrun <file> [options]
 
 Terminal markdown viewer with executable code fences
@@ -45,7 +55,7 @@ if (values.help) {
   process.exit(0);
 }
 if (values.version) {
-  process.stdout.write(`0.1.0
+  process.stdout.write(`${pkg.version}
 `);
   process.exit(0);
 }
@@ -76,5 +86,5 @@ await runApp({
   delegate: values.delegate ?? false
 });
 
-//# debugId=A091019AAEEE08C764756E2164756E21
+//# debugId=00201D170FD0879364756E2164756E21
 //# sourceMappingURL=cli.js.map

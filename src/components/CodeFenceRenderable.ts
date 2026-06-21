@@ -3,6 +3,7 @@ import {
   TextRenderable,
   CodeRenderable,
   InputRenderable,
+  ScrollBoxRenderable,
   createTextAttributes,
   type RenderContext,
   type KeyEvent,
@@ -10,8 +11,7 @@ import {
 import { BORDER_DEFAULT, ACCENT, DANGER, FG_MUTED } from '../theme/colors.js'
 import type { SyntaxStyle } from '@opentui/core'
 import type { Tokens } from 'marked'
-import { InputPanel } from './InputPanel.js'
-import { OutputPanel } from './OutputPanel.js'
+import { InputRow } from './InputRow.js'
 import type { FenceMetadata } from '../parser/metadata.js'
 import type { BlockRunner } from '../engine/BlockRunner.js'
 import type { StateStore } from '../engine/StateStore.js'
@@ -34,17 +34,22 @@ const OUTPUT_BORDER_CHARS = {
   topT: '┬', bottomT: '┴', leftT: '├', rightT: '┤', bottomLeft: '└', bottomRight: '┘', cross: '┼',
 }
 
+const MAX_OUTPUT_LINES = 10_000
+const SCROLL_THRESHOLD = 7
+
 export class CodeFenceRenderable extends BoxRenderable {
-  private inputPanel: InputPanel | null = null
+  private readonly renderCtx: RenderContext
+  private inputRows: InputRow[] = []
   private codeSection: BoxRenderable
   private outputSection: BoxRenderable
-  private outputPanel: OutputPanel
+  private outputScroll: ScrollBoxRenderable
+  private outputLineCount = 0
+  private outputTruncated = false
   private readonly _runner: BlockRunner
   private readonly options: CodeFenceOptions
   private _childFocused = false
 
   constructor(ctx: RenderContext, opts: CodeFenceOptions) {
-    // Outer box is a borderless flex container; borders live on codeSection/outputSection
     super(ctx, {
       flexDirection: 'column',
       flexShrink: 0,
@@ -52,10 +57,10 @@ export class CodeFenceRenderable extends BoxRenderable {
       focusable: true,
     })
 
+    this.renderCtx = ctx
     this._runner = opts.runner
     this.options = opts
 
-    // Code section — full border initially, bottom dropped when output is shown
     this.codeSection = new BoxRenderable(ctx, {
       flexDirection: 'column',
       flexShrink: 0,
@@ -64,7 +69,6 @@ export class CodeFenceRenderable extends BoxRenderable {
     })
     this.add(this.codeSection)
 
-    // Header: description or parseError
     if (opts.parseError) {
       this.codeSection.add(new TextRenderable(ctx, {
         content: `⚠ Metadata parse error: ${opts.parseError}`,
@@ -81,20 +85,22 @@ export class CodeFenceRenderable extends BoxRenderable {
       }))
     }
 
-    // Input panel (only if inputs declared)
+    // Inline InputPanel: rows added directly to codeSection
     if (opts.metadata?.inputs && Object.keys(opts.metadata.inputs).length > 0) {
-      this.inputPanel = new InputPanel(ctx, opts.metadata, opts.stateStore)
-      this.inputPanel.on('submit', () => {
-        if (opts.executionBlocked) return
-        if (this.inputPanel && !this.inputPanel.allInputsSatisfied()) return
-        if (this.runner.status === 'running') return
-        this.clearOutput()
-        opts.onExecute().catch(() => {})
-      })
-      this.codeSection.add(this.inputPanel)
+      for (const [name, spec] of Object.entries(opts.metadata.inputs)) {
+        const row = new InputRow(ctx, { name, spec, stateStore: opts.stateStore })
+        row.on('submit', () => {
+          if (opts.executionBlocked) return
+          if (!this.allInputsSatisfied()) return
+          if (this._runner.status === 'running') return
+          this.clearOutput()
+          opts.onExecute().catch(() => {})
+        })
+        this.inputRows.push(row)
+        this.codeSection.add(row)
+      }
     }
 
-    // Fence body: syntax-highlighted code
     this.codeSection.add(new CodeRenderable(ctx, {
       content: opts.cleanBody.trimEnd(),
       filetype: 'bash',
@@ -104,7 +110,7 @@ export class CodeFenceRenderable extends BoxRenderable {
       paddingLeft: 2,
     }))
 
-    // Output section — hidden until execution, ├/┤ corners connect to codeSection borders
+    // Inline OutputPanel: ScrollBoxRenderable + line-tracking state
     this.outputSection = new BoxRenderable(ctx, {
       flexDirection: 'column',
       flexShrink: 0,
@@ -115,34 +121,72 @@ export class CodeFenceRenderable extends BoxRenderable {
     this.outputSection.visible = false
     this.add(this.outputSection)
 
-    this.outputPanel = new OutputPanel(ctx)
-    this.outputSection.add(this.outputPanel)
+    this.outputScroll = new ScrollBoxRenderable(ctx, {
+      flexShrink: 0,
+      scrollY: true,
+      scrollX: false,
+      stickyScroll: true,
+      stickyStart: 'bottom',
+      contentOptions: { flexDirection: 'column' },
+    })
+    this.outputScroll.visible = false
+    this.outputSection.add(this.outputScroll)
 
-    // Wire up runner output
     this._runner.on('output', (text: string) => {
       if (!this.outputSection.visible) {
         this.codeSection.border = ['top', 'left', 'right']
         this.outputSection.visible = true
       }
-      this.outputPanel.append(text)
+      this.appendOutputText(text)
     })
 
-    // Initial blocked state
-    if (opts.executionBlocked || (this.inputPanel && !this.inputPanel.allInputsSatisfied())) {
+    if (opts.executionBlocked || (this.inputRows.length > 0 && !this.allInputsSatisfied())) {
       this._runner.status = 'blocked'
     }
 
-    // Watch state store for input changes that may unblock this fence
-    if (this.inputPanel) {
+    if (this.inputRows.length > 0) {
       opts.stateStore.on('change', () => {
         if (!opts.executionBlocked && this._runner.status === 'blocked') {
-          if (this.inputPanel!.allInputsSatisfied()) {
+          if (this.allInputsSatisfied()) {
             this._runner.status = 'idle'
             this._runner.emit('status', 'idle')
           }
         }
       })
     }
+  }
+
+  private appendOutputText(text: string): void {
+    if (this.outputTruncated) return
+
+    const lines = text.split('\n').filter(l => l.length > 0)
+    for (const line of lines) {
+      this.outputLineCount++
+      if (this.outputLineCount > MAX_OUTPUT_LINES) {
+        this.outputTruncated = true
+        this.outputScroll.add(new TextRenderable(this.renderCtx, {
+          content: `[output truncated at ${MAX_OUTPUT_LINES} lines]`,
+          flexShrink: 0,
+        }))
+        this.outputScroll.maxHeight = SCROLL_THRESHOLD
+        return
+      }
+      const lineNode = new TextRenderable(this.renderCtx, {
+        content: line,
+        flexShrink: 0,
+      })
+      lineNode.selectable = true
+      this.outputScroll.add(lineNode)
+    }
+
+    if (lines.length > 0) {
+      this.outputScroll.maxHeight = Math.min(this.outputLineCount, SCROLL_THRESHOLD)
+      this.outputScroll.visible = true
+    }
+  }
+
+  private allInputsSatisfied(): boolean {
+    return this.inputRows.every(row => row.hasValue())
   }
 
   setChildFocused(focused: boolean): void {
@@ -155,33 +199,38 @@ export class CodeFenceRenderable extends BoxRenderable {
   private clearOutput(): void {
     this.codeSection.border = true
     this.outputSection.visible = false
-    this.outputPanel.clear()
-    // Restore border colors after border reset
+    for (const child of [...this.outputScroll.getChildren()]) {
+      this.outputScroll.remove(child.id)
+    }
+    this.outputLineCount = 0
+    this.outputTruncated = false
+    this.outputScroll.maxHeight = undefined
+    this.outputScroll.visible = false
     const color = (this._focused || this._childFocused) ? ACCENT : BORDER_DEFAULT
     this.codeSection.borderColor = color
     this.outputSection.borderColor = color
   }
 
   get hasScrollableOutput(): boolean {
-    return this.outputPanel.isScrollable
+    return this.outputLineCount > SCROLL_THRESHOLD
   }
 
   scrollOutputBy(delta: number): void {
-    this.outputPanel.scrollBy(delta)
+    this.outputScroll.scrollBy(delta)
   }
 
   scrollOutputTo(position: number | { x: number; y: number }): void {
-    this.outputPanel.scrollTo(position)
+    this.outputScroll.scrollTo(position)
   }
 
   get outputScrollHeight(): number {
-    return this.outputPanel.scrollHeight
+    return this.outputScroll.scrollHeight
   }
 
   override handleKeyPress(key: KeyEvent): boolean {
     if (key.name === 'return' || key.name === 'enter') {
       if (this.options.executionBlocked) return true
-      if (this.inputPanel && !this.inputPanel.allInputsSatisfied()) return true
+      if (!this.allInputsSatisfied()) return true
       if (this._runner.status === 'running') return true
 
       this.clearOutput()
@@ -207,15 +256,15 @@ export class CodeFenceRenderable extends BoxRenderable {
   }
 
   get inputRenderables(): InputRenderable[] {
-    return this.inputPanel?.inputRenderables ?? []
+    return this.inputRows.map(r => r.inputRenderable).filter((r): r is InputRenderable => r !== null)
   }
 
   get hasOnlyReadonlyInputs(): boolean {
-    return this.inputPanel !== null && this.inputRenderables.length === 0
+    return this.inputRows.length > 0 && this.inputRenderables.length === 0
   }
 
   get missingInputs(): string[] {
-    return this.inputPanel?.missingInputs() ?? []
+    return this.inputRows.filter(r => !r.hasValue()).map(r => r.name)
   }
 
   get runner(): BlockRunner {

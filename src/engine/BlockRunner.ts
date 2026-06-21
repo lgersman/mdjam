@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { EventEmitter } from 'node:events'
 import type { StateStore } from './StateStore.js'
+import { SET_OUTPUT_RE, scriptPreamble } from './script-utils.js'
 
 // Strip ANSI then resolve \r overwrite semantics to get visible lines.
 // A bare \r in a PTY record means "cursor to col 0" (overwrites previous text).
@@ -33,8 +34,6 @@ export type BlockStatus =
   | 'blocked'
   | 'dep-failed'
 
-const SET_OUTPUT_RE = /^::set-output name=([^:]+)::(.*)$/
-
 export class BlockRunner extends EventEmitter {
   readonly blockId: string
   status: BlockStatus = 'idle'
@@ -63,8 +62,7 @@ export class BlockRunner extends EventEmitter {
     // Wrap script: capture exports on exit + intercept ::set-output so the value
     // is also available to subsequent lines in the same block via MDFENCE_*.
     const wrappedScript = [
-      `_MDRUN_CAP="${captureFile}"`,
-      `trap 'export -p > "$_MDRUN_CAP" 2>/dev/null || true' EXIT`,
+      ...scriptPreamble(captureFile),
       `function echo() {`,
       `  command echo "$@"`,
       `  if [[ "$*" =~ ^'::set-output name='([^:]+)'::'(.*) ]]; then`,
@@ -142,8 +140,7 @@ export class BlockRunner extends EventEmitter {
     const recordFile  = join(tmpdir(), `${prefix}.rec`)
 
     const wrappedScript = [
-      `_MDRUN_CAP="${captureFile}"`,
-      `trap 'export -p > "$_MDRUN_CAP" 2>/dev/null || true' EXIT`,
+      ...scriptPreamble(captureFile),
       `function echo() {`,
       `  command echo "$@"`,
       `  if [[ "$*" =~ ^'::set-output name='([^:]+)'::'(.*) ]]; then`,

@@ -4,8 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { EventEmitter } from 'node:events'
 import type { StateStore } from './StateStore.js'
-
-const SET_OUTPUT_RE = /^::set-output name=([^:]+)::(.*)$/
+import { SET_OUTPUT_RE, scriptPreamble } from './script-utils.js'
 
 export class LifecycleRunner extends EventEmitter {
   constructor(private readonly stateStore: StateStore) {
@@ -23,11 +22,7 @@ export class LifecycleRunner extends EventEmitter {
   private async runScript(label: string, script: string): Promise<number> {
     const captureFile = join(tmpdir(), `mdrun_${label}_${process.pid}.env`)
 
-    const wrappedScript = [
-      `_MDRUN_CAP="${captureFile}"`,
-      `trap 'export -p > "$_MDRUN_CAP" 2>/dev/null || true' EXIT`,
-      script,
-    ].join('\n')
+    const wrappedScript = [...scriptPreamble(captureFile), script].join('\n')
 
     const initialEnv: Record<string, string | undefined> = { ...process.env }
     const env: Record<string, string | undefined> = {

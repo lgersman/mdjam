@@ -27,7 +27,7 @@ import { createSyntaxStyle, type ThemeName } from './theme/themes.js'
 import { BORDER_DEFAULT, DANGER, FG_MUTED } from './theme/colors.js'
 import { CodeFenceRenderable } from './components/CodeFenceRenderable.js'
 import { TocRenderable, type HeadingEntry } from './components/TocRenderable.js'
-import { PrerequisitePanel } from './components/PrerequisitePanel.js'
+import { createPrerequisitePanel } from './components/PrerequisitePanel.js'
 import { SetupErrorPanel } from './components/SetupErrorPanel.js'
 import { StateSidePanel } from './components/StateSidePanel.js'
 import { TeardownPanel } from './components/TeardownPanel.js'
@@ -288,7 +288,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     let executionBlocked = prereqResult.failed.length > 0
 
     if (executionBlocked) {
-      const panel = new PrerequisitePanel(renderer, prereqResult)
+      const panel = createPrerequisitePanel(renderer, prereqResult)
       scrollBox.content.add(panel)
     }
 

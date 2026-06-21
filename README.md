@@ -2,12 +2,16 @@
 
 A terminal markdown viewer where bash code blocks can be executed inline. Scripts run, their output appears directly below the fence, values flow between blocks, and the whole thing stays in your terminal.
 
+## Why Bun?
+
+This project cannot run on Node.js. The TUI engine, `@opentui/core`, is a Zig-compiled native renderer that exposes itself via `bun:ffi` — Bun's built-in foreign function interface for calling into native shared libraries. Bun can `dlopen` a `.so`/`.dylib` and call typed C-ABI functions directly from JavaScript, with zero glue code. Node.js has no equivalent; its native extension path requires N-API `.node` addons compiled against a specific Node ABI. The two mechanisms are incompatible, so the dependency on `@opentui/core` makes Bun the only viable runtime.
+
 ## Installation
 
 ```bash
-npm install
-npm run build
-npm link          # makes `mdrun` available globally
+bun install
+bun run build
+bun link          # makes `mdrun` available globally
 ```
 
 ## Usage
@@ -18,9 +22,11 @@ mdrun [options] <file.md>
 Options:
   --no-auto          Suppress auto-execution of auto:true blocks
   --no-watch         Disable file watch / reload on change
-  --theme <name>     github-dark | github-light | dracula  (default: github-dark)
-  -v, --version      Print version
-  -h, --help         Show help
+  --theme <name>     dark | light | dracula | tokyo-night  (default: dark)
+  --verbose          Show document frontmatter as a header
+  --delegate         On exit, write the focused block's stdout/stderr and use its exit code
+  --version          Print version
+  --help             Show help
 ```
 
 ## Keyboard map
@@ -137,7 +143,7 @@ echo "MY_KEY is: $MY_KEY"
 Downstream blocks receive every state store value as `MDFENCE_<KEY>` environment variables:
 
 ```bash
-echo "MY_KEY is: $MY_KEY"
+echo "MY_KEY is: $MDFENCE_MY_KEY"
 ```
 
 Values written by a block with `id: my-block` are stored under both the bare key (`TOKEN`) and the namespaced key (`my-block.TOKEN`). Values written by `setup` use bare keys only.
@@ -157,10 +163,10 @@ Values written by a block with `id: my-block` are stored under both the bare key
 ## Development
 
 ```bash
-npm test          # run unit tests
-npm run build     # compile to dist/
-npm run dev       # watch mode — rebuilds on source change
-npm start -- <file.md>   # run the built CLI directly
+bun test           # run unit tests
+bun run build      # compile to dist/
+bun run dev        # watch mode — rebuilds on source change
+bun start -- <file.md>   # run the source directly without building
 ```
 
-The project uses [vite-plus](https://viteplus.dev/) for building and testing. Node.js 24.16.0 is required (declared in `engines.node`).
+Requires Bun ≥ 1.3.14 (declared in `engines.bun`).

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vite-plus/test'
+import { describe, it, expect } from 'bun:test'
 import { parseFenceMetadata, extractFenceNodes } from '../../src/parser/metadata.js'
 
 describe('parseFenceMetadata', () => {

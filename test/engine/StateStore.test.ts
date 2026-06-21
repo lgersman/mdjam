@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vite-plus/test'
+import { describe, it, expect, mock } from 'bun:test'
 import { StateStore } from '../../src/engine/StateStore.js'
 
 describe('StateStore', () => {
@@ -17,7 +17,7 @@ describe('StateStore', () => {
 
   it('emits change event on set', () => {
     const store = new StateStore()
-    const handler = vi.fn()
+    const handler = mock()
     store.on('change', handler)
     store.set('KEY', 'value', 'block-1')
     expect(handler).toHaveBeenCalledWith('KEY', 'value', 'block-1')
@@ -25,7 +25,7 @@ describe('StateStore', () => {
 
   it('emits reset event on clear', () => {
     const store = new StateStore()
-    const handler = vi.fn()
+    const handler = mock()
     store.on('reset', handler)
     store.set('A', '1', null)
     store.clear()

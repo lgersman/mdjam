@@ -10,6 +10,8 @@ This project targets **Bun** as the sole runtime. Never use Node.js or Node.js-s
 - Use `bun test` (not `jest`, `vitest`, `mocha`).
 - Use `bun build` (not `webpack`, `esbuild` invoked directly, `tsc` for emit).
 - Do not add `engines.node` or `.nvmrc`; use `engines.bun` in `package.json`.
+- Do not add `tsconfig.json`; Bun transpiles TypeScript natively without it.
+- Use `@types/bun` (not `@types/node`) for IDE type coverage of `node:*` builtins.
 
 ## Tooling preferences
 

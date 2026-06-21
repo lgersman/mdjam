@@ -1,7 +1,7 @@
 # PRD: Terminal Markdown Viewer with Executable Code Fences
 
 **Status:** Draft  
-**Date:** 2026-06-10  
+**Date:** 2026-06-21  
 **Author:** lgersman
 
 ---
@@ -32,7 +32,7 @@ The goal is to collapse the gap between *documentation* and *executable script* 
 - Display execution errors (non-zero exit code, stderr output) inline at the bottom of the failed code block.
 - Display errors from frontmatter-declared bash code prominently at the top of the document before any content.
 - Support document-level `setup` and `teardown` lifecycle scripts in frontmatter, executed before rendering and on viewer exit respectively.
-- Run on Node.js 24 with Vite/Vitest as the build and test toolchain.
+- Run on Bun with its native build and test toolchain.
 
 ## 4. Non-Goals
 
@@ -63,6 +63,7 @@ The goal is to collapse the gap between *documentation* and *executable script* 
 - **FR-02** Syntax-highlight non-executable code fences using Tree-sitter (delegated to `@opentui/core`'s `CodeRenderable`).
 - **FR-03** Support scrolling through long documents with keyboard navigation (`j`/`k`, `PgUp`/`PgDn`, `g`/`G`).
 - **FR-04** Reload the document on file change (watch mode).
+- **FR-42** A `toc` fence renders an interactive table of contents built from the document's heading structure, allowing direct navigation to any section.
 
 ### 6.2 Document-Level Frontmatter
 
@@ -130,6 +131,7 @@ echo "::set-output name=API_HOST::$API_HOST"
 | `inputs.<name>.readonly` | boolean | no (default: `false`) | If `true`, the input field is displayed but not editable by the user |
 | `outputs` | string[] | no | Names of values this block will export via `::set-output` |
 | `depends` | string[] | no | IDs of blocks that must be executed before this one |
+| `interactive` | boolean | no (default: `false`) | If `true`, run the block in a PTY, enabling interactive programs (prompts, curses-based UIs) |
 
 - **FR-09** A fence without any metadata comment is treated as a display-only, manually-executable block with no inputs, outputs, or dependencies.
 - **FR-10** Metadata parsing errors (malformed YAML) must surface as a visible warning in the block header without preventing document rendering.
@@ -176,7 +178,7 @@ echo "::set-output name=MY_KEY::my_value"
 
 - **FR-29** When a block with a `depends` list is executed, the viewer first recursively executes all listed dependency blocks (in topological order) if they have not already run successfully in the current session.
 - **FR-30** If a dependency block fails (non-zero exit), execution of the dependent block is aborted and an error is shown.
-- **FR-31** Circular dependency detection: if a cycle is found at document parse time, the involved blocks render a permanent error badge and cannot be executed.
+- **FR-31** Circular dependency detection: if a cycle is found at document parse time, the involved blocks cannot be executed. *(Cycle detection is implemented; the permanent visual error badge on affected blocks is not yet rendered — tracked as a known gap.)*
 
 ### 6.8 Auto-Execute
 
@@ -226,13 +228,13 @@ echo "::set-output name=MY_KEY::my_value"
 
 | State | Indicator |
 |---|---|
-| Idle, never run | `○ Ready` |
-| Blocked (missing inputs) | `✗ Blocked — missing: FOO, BAR` |
-| Running | `⟳ Running…` (animated) |
-| Succeeded | `✓ Done (exit 0)` |
-| Failed | `✗ Failed (exit 1)` |
-| Cancelled | `◌ Cancelled` |
-| Dependency failed | `✗ Skipped — dep failed: <block-id>` |
+| Idle, never run | `Ready` |
+| Blocked (missing inputs) | `Blocked — missing: FOO, BAR` |
+| Running | `Running…` (animated) |
+| Succeeded | `Done (exit 0)` |
+| Failed | `Failed (exit 1)` |
+| Cancelled | `Cancelled` |
+| Dependency failed | `Skipped — dep failed: <block-id>` |
 
 ---
 
@@ -240,12 +242,17 @@ echo "::set-output name=MY_KEY::my_value"
 
 ```
 mdjam [options] <file.md>
+mdjam [options] --stdin
 
 Options:
   --no-auto          Suppress auto-execution of auto:true blocks
   --watch            Reload document on file change (default: enabled)
   --no-watch         Disable watch mode
-  --theme <name>     Syntax theme: github-dark | github-light | dracula  [default: github-dark]
+  --theme <name>     Syntax theme: dark | light | dracula | tokyo-night  [default: dark]
+  --stdin            Read markdown from stdin instead of a file
+  --verbose          Show document frontmatter as a YAML header above the document
+  --delegate         On exit, forward the focused block's stdout/stderr and exit code to the shell
+  --agent-docs       Print agent-optimized CLI reference and exit
   -h, --help         Show help
   -v, --version      Print version
 ```
@@ -258,12 +265,12 @@ Options:
 
 | Layer | Choice | Rationale |
 |---|---|---|
-| Runtime | Node.js 24 | Latest; native `--watch`, native fetch, improved perf |
-| Build | Vite (library mode) | Fast dev loop, ESM output |
-| Test | Vitest | Shares Vite config, native ESM, fast |
+| Runtime | Bun | Required by `@opentui/core`; native subprocess, watch, and test APIs |
+| Build | Bun build | Native bundler, no separate config file |
+| Test | Bun test | Built into Bun; no additional toolchain dependency |
 | TUI rendering | `@opentui/core` | Zig-backed terminal renderer with flex layout, markdown, streaming output |
-| Markdown hook | `renderNode` / `createMarkdownCodeBlockRenderer` | Overrides `bash` fence rendering within `MarkdownRenderable` |
-| Process execution | Node.js `child_process.spawn` | Streams stdout/stderr; injects environment |
+| Markdown hook | `renderNode` / `createMarkdownCodeBlockRenderer` | Overrides `bash`/`toc` fence rendering within `MarkdownRenderable` |
+| Process execution | Bun `spawn` | Streams stdout/stderr; injects environment; PTY via `Bun.spawnSync` for interactive blocks |
 | Frontmatter | `gray-matter` | Zero-dep YAML frontmatter parser |
 
 ### 9.2 Rendering Pipeline
@@ -322,15 +329,17 @@ ExecutionEngine
 App
 ├─ PrerequisitePanel       (shown when any prerequisite fails)
 ├─ SetupErrorPanel         (shown when setup script exits non-zero; blocks all fence execution)
+├─ FrontmatterPanel        (editable input panel for document-wide defaults declared in frontmatter)
 ├─ StateSidePanel          (toggleable overlay; shows StateStore contents)
+├─ HelpPanel               (toggleable overlay; shows keyboard map)
 ├─ ScrollableDocument
 │    └─ MarkdownRenderable
 │         ├─ [standard blocks: headings, paragraphs, lists, tables…]
+│         ├─ TocRenderable          (interactive table of contents for `toc` fences)
 │         └─ CodeFenceRenderable[]
-│              ├─ InputPanel
-│              │    └─ InputRow[]   (editable TextField | readonly DisplayRow)
+│              ├─ InputRow[]        (editable TextField | readonly DisplayRow, rendered above fence)
 │              ├─ FenceBody         (CodeRenderable with syntax highlighting)
-│              ├─ StatusBar
+│              ├─ BottomStatusBar   (execution state, keyboard hint)
 │              └─ OutputPanel       (TextRenderable, streaming, collapsible)
 └─ TeardownPanel           (rendered on exit; shows teardown script output before process ends)
 ```
@@ -356,28 +365,31 @@ mdjam/
 │   │   └─ dependency.ts       dependency graph + cycle detection
 │   ├─ engine/
 │   │   ├─ StateStore.ts       reactive key-value store
-│   │   ├─ BlockRunner.ts      spawn, stream, ::set-output interception, export capture
+│   │   ├─ BlockRunner.ts      spawn/PTY, stream, ::set-output interception, export capture
 │   │   ├─ LifecycleRunner.ts  setup/teardown execution, env diff, bare-key state store writes
-│   │   └─ ExecutionEngine.ts  dep resolution + orchestration
+│   │   ├─ ExecutionEngine.ts  dep resolution + orchestration
+│   │   ├─ Prerequisites.ts    tool/env prerequisite checking
+│   │   └─ script-utils.ts     shared script execution utilities
 │   ├─ components/
 │   │   ├─ PrerequisitePanel.ts
 │   │   ├─ SetupErrorPanel.ts
 │   │   ├─ TeardownPanel.ts
+│   │   ├─ FrontmatterPanel.ts
 │   │   ├─ StateSidePanel.ts
+│   │   ├─ HelpPanel.ts
 │   │   ├─ CodeFenceRenderable.ts
-│   │   ├─ InputPanel.ts
+│   │   ├─ TocRenderable.ts
 │   │   ├─ InputRow.ts
-│   │   ├─ StatusBar.ts
+│   │   ├─ BottomStatusBar.ts
 │   │   └─ OutputPanel.ts
 │   └─ theme/
-│       └─ themes.ts           SyntaxStyle definitions
+│       ├─ themes.ts           SyntaxStyle definitions (dark, light, dracula, tokyo-night)
+│       └─ colors.ts           shared color primitives
 ├─ test/
 │   ├─ parser/
 │   ├─ engine/
 │   └─ fixtures/               sample .md files for integration tests
-├─ package.json
-├─ vite.config.ts
-└─ vitest.config.ts
+└─ package.json
 ```
 
 ---

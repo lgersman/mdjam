@@ -60,7 +60,9 @@ for TARGET in "${TARGETS[@]}"; do
     *)              EXT="" ;;
   esac
 
-  OUTFILE="$OUTDIR/mdjam-${TARGET}${EXT}"
+  # Strip the "bun-" compiler prefix from the user-facing filename
+  PLATFORM="${TARGET#bun-}"
+  OUTFILE="$OUTDIR/mdjam-${PLATFORM}${EXT}"
   echo "  compiling $TARGET -> $OUTFILE"
 
   bun build "$ROOT_DIR/src/cli.ts" \

@@ -171,6 +171,58 @@ Values written by a block with `id: my-block` are stored under both the bare key
 | `Cancelled` | Cancelled with `Esc` |
 | `Skipped — dep failed: <id>` | A dependency block failed |
 
+## Using mdrun as an agent tool
+
+`mdrun --agent-docs` prints a compact reference optimised for pasting into a tool description field.
+
+The non-interactive pattern: pipe markdown in via `--stdin`, mark blocks `auto: true` so they run without keypresses, and use `--delegate` to forward the focused block's stdout/stderr and exit code back to the caller.
+
+### Example — Claude Code tool configuration
+
+Add this to your project's `CLAUDE.md` or `~/.claude/CLAUDE.md`:
+
+```markdown
+## Available tools
+
+**mdrun** — run a markdown runbook non-interactively and capture output.
+
+Usage:
+  printf '%s' "$MARKDOWN" | mdrun --stdin --delegate --no-watch
+
+- Mark bash fences with `auto: true` to execute them on load.
+- `--delegate` forwards the focused block's stdout/stderr and mirrors its exit code.
+- `echo "::set-output name=KEY::value"` inside a block captures KEY into the state store.
+- Run `mdrun --agent-docs` for full reference.
+```
+
+### Example — MCP / JSON tool definition
+
+```json
+{
+  "name": "mdrun",
+  "description": "<paste output of: mdrun --agent-docs>",
+  "inputSchema": {
+    "type": "object",
+    "required": ["markdown"],
+    "properties": {
+      "markdown": {
+        "type": "string",
+        "description": "Markdown with bash code fences to execute"
+      }
+    }
+  }
+}
+```
+
+The wrapper script that bridges the JSON call to the CLI:
+
+```bash
+#!/usr/bin/env bash
+# reads {"markdown":"..."} from stdin, runs it, returns stdout
+markdown=$(jq -r '.markdown')
+printf '%s' "$markdown" | mdrun --stdin --delegate --no-watch
+```
+
 ## Development
 
 ```bash

@@ -6,6 +6,37 @@ A terminal markdown viewer where bash code blocks can be executed inline. Script
 
 This project cannot run on Node.js. The TUI engine, `@opentui/core`, is a Zig-compiled native renderer that exposes itself via `bun:ffi` — Bun's built-in foreign function interface for calling into native shared libraries. Bun can `dlopen` a `.so`/`.dylib` and call typed C-ABI functions directly from JavaScript, with zero glue code. Node.js has no equivalent; its native extension path requires N-API `.node` addons compiled against a specific Node ABI. The two mechanisms are incompatible, so the dependency on `@opentui/core` makes Bun the only viable runtime.
 
+## Prerequisites
+
+This project uses [mise](https://mise.jdx.dev) to manage the Bun version and [direnv](https://direnv.net) to activate it automatically when you enter the directory.
+
+1. **Install mise:**
+   ```bash
+   curl https://mise.run | sh
+   ```
+   Then add the activation hook to your shell (`~/.bashrc`, `~/.zshrc`, etc.):
+   ```bash
+   eval "$(mise activate bash)"   # replace bash with zsh / fish as needed
+   ```
+
+2. **Install direnv:**
+   ```bash
+   # macOS
+   brew install direnv
+   # Ubuntu / Debian
+   sudo apt install direnv
+   ```
+   Then hook it into your shell:
+   ```bash
+   echo 'eval "$(direnv hook bash)"' >> ~/.bashrc   # replace bash with zsh if needed
+   ```
+
+3. **Allow direnv** in the project directory:
+   ```bash
+   direnv allow
+   ```
+   mise will install Bun at the version declared in `.mise.toml` and activate it automatically on every subsequent `cd`.
+
 ## Installation
 
 ```bash
@@ -232,4 +263,4 @@ bun run dev        # watch mode — rebuilds on source change
 bun start -- <file.md>   # run the source directly without building
 ```
 
-Requires Bun ≥ 1.3.14 (declared in `engines.bun`).
+The required Bun version is pinned in `.mise.toml`; see [Prerequisites](#prerequisites) for setup.

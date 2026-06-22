@@ -100,15 +100,15 @@ const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
   allowPositionals: true,
   options: {
-    stdin:    { type: 'boolean', default: false },
-    auto:     { type: 'boolean', default: true },
-    watch:    { type: 'boolean', default: true },
-    theme:    { type: 'string',  default: 'dark' },
-    verbose:  { type: 'boolean', default: false },
-    delegate:      { type: 'boolean', default: false },
-    'agent-docs':  { type: 'boolean', default: false },
-    version:       { type: 'boolean', default: false },
-    help:          { type: 'boolean', default: false },
+    stdin:        { type: 'boolean', default: false },
+    'no-auto':    { type: 'boolean', default: false },
+    'no-watch':   { type: 'boolean', default: false },
+    theme:        { type: 'string',  default: 'dark' },
+    verbose:      { type: 'boolean', default: false },
+    delegate:     { type: 'boolean', default: false },
+    'agent-docs': { type: 'boolean', default: false },
+    version:      { type: 'boolean', default: false },
+    help:         { type: 'boolean', default: false },
   },
 })
 
@@ -139,7 +139,7 @@ if (values.stdin) {
   await runApp({
     content,
     theme,
-    noAuto: !values.auto,
+    noAuto: values['no-auto'] ?? false,
     noWatch: true,
     verbose: values.verbose ?? false,
     delegate: values.delegate ?? false,
@@ -160,8 +160,8 @@ if (values.stdin) {
   await runApp({
     filePath,
     theme,
-    noAuto: !values.auto,
-    noWatch: !values.watch,
+    noAuto: values['no-auto'] ?? false,
+    noWatch: values['no-watch'] ?? false,
     verbose: values.verbose ?? false,
     delegate: values.delegate ?? false,
   })

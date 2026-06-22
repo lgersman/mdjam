@@ -96,8 +96,8 @@ var { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     stdin: { type: "boolean", default: false },
-    auto: { type: "boolean", default: true },
-    watch: { type: "boolean", default: true },
+    "no-auto": { type: "boolean", default: false },
+    "no-watch": { type: "boolean", default: false },
     theme: { type: "string", default: "dark" },
     verbose: { type: "boolean", default: false },
     delegate: { type: "boolean", default: false },
@@ -131,7 +131,7 @@ if (values.stdin) {
   await runApp({
     content,
     theme,
-    noAuto: !values.auto,
+    noAuto: values["no-auto"] ?? false,
     noWatch: true,
     verbose: values.verbose ?? false,
     delegate: values.delegate ?? false
@@ -151,12 +151,12 @@ if (values.stdin) {
   await runApp({
     filePath,
     theme,
-    noAuto: !values.auto,
-    noWatch: !values.watch,
+    noAuto: values["no-auto"] ?? false,
+    noWatch: values["no-watch"] ?? false,
     verbose: values.verbose ?? false,
     delegate: values.delegate ?? false
   });
 }
 
-//# debugId=E4455B5694CA6B5664756E2164756E21
+//# debugId=5F6B7FAC5704F6AB64756E2164756E21
 //# sourceMappingURL=cli.js.map

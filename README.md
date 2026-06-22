@@ -8,6 +8,28 @@ This project cannot run on Node.js. The TUI engine, `@opentui/core`, is a Zig-co
 
 ## Installation
 
+**Linux and macOS** — download and install the prebuilt binary:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/lgersman/mdjam/main/install.sh | sh
+```
+
+Installs to `~/.local/bin` by default. Override with `INSTALL_DIR`:
+
+```bash
+INSTALL_DIR=/usr/local/bin curl -sSL https://raw.githubusercontent.com/lgersman/mdjam/main/install.sh | sh
+```
+
+Pin a specific version with `VERSION`:
+
+```bash
+VERSION=0.1.0 curl -sSL https://raw.githubusercontent.com/lgersman/mdjam/main/install.sh | sh
+```
+
+**Windows** — use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and run the Linux install command above.
+
+**Build from source** (requires [Bun](https://bun.sh) ≥ 1.3.14):
+
 ```bash
 bun install
 bun run build

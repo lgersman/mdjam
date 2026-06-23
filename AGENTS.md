@@ -1,5 +1,9 @@
 # Agent Instructions
 
+## Environment
+
+This project uses [mise](https://mise.jdx.dev) (`.mise.toml`) to pin the Bun version and [direnv](https://direnv.net) (`.envrc`) to activate it automatically. Both must be installed and hooked into the shell before running any project commands. Run `direnv allow` once after cloning to enable the `.envrc`.
+
 ## Runtime
 
 This project targets **Bun** as the sole runtime. Never use Node.js or Node.js-specific tools.

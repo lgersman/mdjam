@@ -95,6 +95,7 @@ done
 echo "Packaging mdjam-syntax.tar.gz..."
 cd "$OUTDIR"
 tar -czf mdjam-syntax.tar.gz mdjam-syntax/
+rm -rf mdjam-syntax/
 cd - > /dev/null
 
 echo "Generating checksums..."

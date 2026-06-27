@@ -9,13 +9,24 @@ import { createRequire } from "module";
 import { addDefaultParsers } from "@opentui/core";
 import { runApp } from "./app.js";
 import pkg from "../package.json";
-var _require = createRequire(import.meta.url);
-var bashPkgDir = dirname(_require.resolve("tree-sitter-bash/package.json"));
+var _sidecarDir = join(dirname(process.execPath), "mdjam-syntax");
+var _useSidecar = existsSync(join(_sidecarDir, "parser.worker.js"));
+if (_useSidecar) {
+  process.env.OTUI_TREE_SITTER_WORKER_PATH = join(_sidecarDir, "parser.worker.js");
+}
+var _bashWasm = _useSidecar ? join(_sidecarDir, "bash", "tree-sitter-bash.wasm") : (() => {
+  const _require = createRequire(import.meta.url);
+  return join(dirname(_require.resolve("tree-sitter-bash/package.json")), "tree-sitter-bash.wasm");
+})();
+var _bashHighlights = _useSidecar ? join(_sidecarDir, "bash", "highlights.scm") : (() => {
+  const _require = createRequire(import.meta.url);
+  return join(dirname(_require.resolve("tree-sitter-bash/package.json")), "queries", "highlights.scm");
+})();
 addDefaultParsers([{
   filetype: "bash",
   aliases: ["sh", "shell"],
-  wasm: join(bashPkgDir, "tree-sitter-bash.wasm"),
-  queries: { highlights: [join(bashPkgDir, "queries/highlights.scm")] }
+  wasm: _bashWasm,
+  queries: { highlights: [_bashHighlights] }
 }]);
 var HELP = `Usage: mdjam <file> [options]
        mdjam --stdin [options]
@@ -158,5 +169,5 @@ if (values.stdin) {
   });
 }
 
-//# debugId=5F6B7FAC5704F6AB64756E2164756E21
+//# debugId=9383BCABDE5FF70D64756E2164756E21
 //# sourceMappingURL=cli.js.map

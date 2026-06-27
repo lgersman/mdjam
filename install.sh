@@ -41,9 +41,10 @@ fi
 
 ASSET_URL="${BASE_URL}/${ASSET}"
 SUMS_URL="${BASE_URL}/SHA256SUMS"
+SYNTAX_TAR_URL="${BASE_URL}/mdjam-syntax.tar.gz"
 
 # Check for required tools
-for cmd in curl sha256sum; do
+for cmd in curl sha256sum tar; do
   command -v "$cmd" >/dev/null 2>&1 || die "'$cmd' is required but not found"
 done
 
@@ -61,11 +62,20 @@ cd "$TMPDIR"
 grep "^[0-9a-f]*  ${ASSET}$" SHA256SUMS | sha256sum -c - || die "Checksum verification failed"
 cd - >/dev/null
 
+echo "Downloading syntax assets (mdjam-syntax)..."
+curl -sSfL "$SYNTAX_TAR_URL" -o "$TMPDIR/mdjam-syntax.tar.gz" || die "Failed to download mdjam-syntax.tar.gz"
+tar -xzf "$TMPDIR/mdjam-syntax.tar.gz" -C "$TMPDIR" || die "Failed to extract mdjam-syntax.tar.gz"
+
 mkdir -p "$INSTALL_DIR"
 mv "$TMPDIR/$ASSET" "$INSTALL_DIR/$BINARY"
 chmod +x "$INSTALL_DIR/$BINARY"
 
+# Install sidecar next to binary so syntax highlighting works
+rm -rf "$INSTALL_DIR/mdjam-syntax"
+mv "$TMPDIR/mdjam-syntax" "$INSTALL_DIR/mdjam-syntax"
+
 echo "Installed $BINARY to $INSTALL_DIR/$BINARY"
+echo "Installed syntax assets to $INSTALL_DIR/mdjam-syntax"
 
 # Warn if INSTALL_DIR is not in PATH
 case ":${PATH}:" in

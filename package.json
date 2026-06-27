@@ -1,6 +1,6 @@
 {
   "name": "mdjam",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Terminal markdown viewer with executable code fences",
   "type": "module",
   "bin": {
@@ -24,6 +24,12 @@
     "tree-sitter-bash": "^0.25.1"
   },
   "devDependencies": {
+    "@opentui/core-darwin-arm64": "0.4.1",
+    "@opentui/core-darwin-x64": "0.4.1",
+    "@opentui/core-linux-arm64": "0.4.1",
+    "@opentui/core-linux-arm64-musl": "0.4.1",
+    "@opentui/core-win32-arm64": "0.4.1",
+    "@opentui/core-win32-x64": "0.4.1",
     "@types/bun": "latest"
   },
   "patchedDependencies": {

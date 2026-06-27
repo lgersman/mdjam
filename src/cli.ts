@@ -8,13 +8,35 @@ import { runApp } from './app.js'
 import type { ThemeName } from './theme/themes.js'
 import pkg from '../package.json'
 
-const _require = createRequire(import.meta.url)
-const bashPkgDir = dirname(_require.resolve('tree-sitter-bash/package.json'))
+// Bun 1.x compiled binaries cannot embed workers or WASM files.
+// We use a sidecar directory (mdjam-syntax/) next to the binary that ships
+// a pre-bundled parser.worker.js plus language WASM files.
+const _sidecarDir = join(dirname(process.execPath), 'mdjam-syntax')
+const _useSidecar = existsSync(join(_sidecarDir, 'parser.worker.js'))
+
+if (_useSidecar) {
+  process.env.OTUI_TREE_SITTER_WORKER_PATH = join(_sidecarDir, 'parser.worker.js')
+}
+
+const _bashWasm = _useSidecar
+  ? join(_sidecarDir, 'bash', 'tree-sitter-bash.wasm')
+  : (() => {
+    const _require = createRequire(import.meta.url)
+    return join(dirname(_require.resolve('tree-sitter-bash/package.json')), 'tree-sitter-bash.wasm')
+  })()
+
+const _bashHighlights = _useSidecar
+  ? join(_sidecarDir, 'bash', 'highlights.scm')
+  : (() => {
+    const _require = createRequire(import.meta.url)
+    return join(dirname(_require.resolve('tree-sitter-bash/package.json')), 'queries', 'highlights.scm')
+  })()
+
 addDefaultParsers([{
   filetype: 'bash',
   aliases: ['sh', 'shell'],
-  wasm: join(bashPkgDir, 'tree-sitter-bash.wasm'),
-  queries: { highlights: [join(bashPkgDir, 'queries/highlights.scm')] },
+  wasm: _bashWasm,
+  queries: { highlights: [_bashHighlights] },
 }])
 
 const HELP = `\

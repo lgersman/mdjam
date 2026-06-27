@@ -33,8 +33,8 @@ cp bun.lock bun.lock.release-bak
 
 restore_packages() {
   echo "Restoring package files..."
-  mv package.json.release-bak package.json
-  mv bun.lock.release-bak bun.lock
+  [[ -f package.json.release-bak ]] && mv package.json.release-bak package.json
+  [[ -f bun.lock.release-bak ]] && mv bun.lock.release-bak bun.lock
   bun install --silent
 }
 trap restore_packages EXIT
@@ -54,6 +54,26 @@ bun install --cpu='*' --os='*'
 echo "Building mdjam v${VERSION}"
 mkdir -p "$OUTDIR"
 
+# Build the sidecar syntax directory (platform-independent — JS + WASM only).
+# Bun 1.x compiled binaries cannot embed workers or WASM files, so the
+# parser worker and language WASM files ship as a separate mdjam-syntax/ directory
+# that must live next to the mdjam binary at install time.
+SIDECAR_DIR="$OUTDIR/mdjam-syntax"
+echo "Building sidecar syntax assets -> $SIDECAR_DIR"
+mkdir -p "$SIDECAR_DIR"
+
+# Bundle parser.worker.js with all JS deps; Bun copies tree-sitter.wasm alongside.
+bun build "$ROOT_DIR/node_modules/@opentui/core/parser.worker.js" \
+  --outdir "$SIDECAR_DIR" \
+  --target bun
+
+# Copy bash parser assets
+mkdir -p "$SIDECAR_DIR/bash"
+cp "$ROOT_DIR/node_modules/tree-sitter-bash/tree-sitter-bash.wasm" \
+  "$SIDECAR_DIR/bash/tree-sitter-bash.wasm"
+cp "$ROOT_DIR/node_modules/tree-sitter-bash/queries/highlights.scm" \
+  "$SIDECAR_DIR/bash/highlights.scm"
+
 for TARGET in "${TARGETS[@]}"; do
   case "$TARGET" in
     bun-windows-*)  EXT=".exe" ;;
@@ -72,9 +92,14 @@ for TARGET in "${TARGETS[@]}"; do
     --outfile "$OUTFILE"
 done
 
+echo "Packaging mdjam-syntax.tar.gz..."
+cd "$OUTDIR"
+tar -czf mdjam-syntax.tar.gz mdjam-syntax/
+cd - > /dev/null
+
 echo "Generating checksums..."
 cd "$OUTDIR"
-sha256sum mdjam-* > SHA256SUMS
+sha256sum mdjam-linux-* mdjam-darwin-* mdjam-windows-* mdjam-syntax.tar.gz > SHA256SUMS
 cd - > /dev/null
 
 echo ""

@@ -1,3 +1,30 @@
+diff --git a/node_modules/@opentui/core/.bun-tag-7ec4206c08b4b3a5 b/.bun-tag-7ec4206c08b4b3a5
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/index-pcvh9d34.js b/index-pcvh9d34.js
+index fc339a1d17ddbed03a9d4366780ea35fd7ae477b..0b49bad1547ed8aa71b4287ca46d38fd0445879b 100644
+--- a/index-pcvh9d34.js
++++ b/index-pcvh9d34.js
+@@ -8239,8 +8239,8 @@ class TreeSitterClient extends EventEmitter2 {
+     if (this.worker) {
+       return;
+     }
+-    const workerPath = this.resolveWorkerPath();
+-    const worker = new Worker(workerPath);
++    const overridePath = this.options.workerPath || env.OTUI_TREE_SITTER_WORKER_PATH || (typeof OTUI_TREE_SITTER_WORKER_PATH !== "undefined" ? OTUI_TREE_SITTER_WORKER_PATH : void 0);
++    const worker = overridePath ? new Worker(overridePath) : new Worker(new URL("./parser.worker.js", import.meta.url));
+     this.worker = worker;
+     worker.onmessage = (event) => {
+       if (this.worker !== worker) {
+@@ -8310,7 +8310,7 @@ class TreeSitterClient extends EventEmitter2 {
+       return OTUI_TREE_SITTER_WORKER_PATH;
+     }
+     let workerPath = new URL("./parser.worker.js", import.meta.url).href;
+-    if (!existsSync2(resolve2(import.meta.dirname, "parser.worker.js"))) {
++    if (!bun && !existsSync2(resolve2(import.meta.dirname, "parser.worker.js"))) {
+       workerPath = new URL("./parser.worker.ts", import.meta.url).href;
+     }
+     return workerPath;
 diff --git a/index.js b/index.js
 index 1ec69d5280f0b0c4268e5b8ebb57f5609245eff8..93aa4c93bff16af1052cbc01758d4f9e10a3f5bb 100644
 --- a/index.js

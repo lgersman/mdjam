@@ -54,7 +54,7 @@ INSTALL_DIR=/usr/local/bin curl -sSL https://raw.githubusercontent.com/lgersman/
 Pin a specific version with `VERSION`:
 
 ```bash
-VERSION=0.1.0 curl -sSL https://raw.githubusercontent.com/lgersman/mdjam/main/install.sh | sh
+VERSION=0.1.1 curl -sSL https://raw.githubusercontent.com/lgersman/mdjam/main/install.sh | sh
 ```
 
 **Windows** — use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and run the Linux install command above.

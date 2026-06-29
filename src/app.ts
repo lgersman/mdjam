@@ -80,7 +80,7 @@ function _fillBlockquoteChildren(self: any, renderable: any, token: any, idPrefi
 }
 function _hasStructuredBlocks(token: any) {
   return (token.tokens ?? []).some(
-    (t: any) => t.type === 'table' || t.type === 'code' || t.type === 'hr' || t.type === 'blockquote'
+    (t: any) => t.type === 'table' || t.type === 'code' || t.type === 'hr'
   )
 }
 ;(MarkdownRenderable.prototype as any).createBlockquoteRenderable = (function (orig: Function) {

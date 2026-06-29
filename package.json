@@ -1,6 +1,6 @@
 {
   "name": "mdjam",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Terminal markdown viewer with executable code fences",
   "type": "module",
   "bin": {

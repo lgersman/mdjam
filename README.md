@@ -2,13 +2,11 @@
 
 A terminal markdown viewer where bash code blocks can be executed inline. Scripts run, their output appears directly below the fence, values flow between blocks, and the whole thing stays in your terminal.
 
-## Why Bun?
-
-This project cannot run on Node.js. The TUI engine, `@opentui/core`, is a Zig-compiled native renderer that exposes itself via `bun:ffi` — Bun's built-in foreign function interface for calling into native shared libraries. Bun can `dlopen` a `.so`/`.dylib` and call typed C-ABI functions directly from JavaScript, with zero glue code. Node.js has no equivalent; its native extension path requires N-API `.node` addons compiled against a specific Node ABI. The two mechanisms are incompatible, so the dependency on `@opentui/core` makes Bun the only viable runtime.
+Implemented in [Zig](https://ziglang.org) — ships as a single statically-linked binary with no runtime dependencies.
 
 ## Prerequisites
 
-This project uses [mise](https://mise.jdx.dev) to manage the Bun version and [direnv](https://direnv.net) to activate it automatically when you enter the directory.
+This project uses [mise](https://mise.jdx.dev) to manage the Zig version and [direnv](https://direnv.net) to activate it automatically when you enter the directory.
 
 1. **Install mise:**
    ```bash
@@ -35,7 +33,7 @@ This project uses [mise](https://mise.jdx.dev) to manage the Bun version and [di
    ```bash
    direnv allow
    ```
-   mise will install Bun at the version declared in `.mise.toml` and activate it automatically on every subsequent `cd`.
+   mise will install Zig and ZLS at the versions declared in `.mise.toml` and activate them automatically on every subsequent `cd`.
 
 ## Installation
 
@@ -54,17 +52,16 @@ INSTALL_DIR=/usr/local/bin curl -sSL https://raw.githubusercontent.com/lgersman/
 Pin a specific version with `VERSION`:
 
 ```bash
-VERSION=0.1.0 curl -sSL https://raw.githubusercontent.com/lgersman/mdjam/main/install.sh | sh
+VERSION=0.2.0 curl -sSL https://raw.githubusercontent.com/lgersman/mdjam/main/install.sh | sh
 ```
 
 **Windows** — use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and run the Linux install command above.
 
-**Build from source** (requires [Bun](https://bun.sh) ≥ 1.3.14):
+**Build from source** (requires [Zig](https://ziglang.org) ≥ 0.16.0):
 
 ```bash
-bun install
-bun run build
-bun link          # makes `mdjam` available globally
+zig build -Doptimize=ReleaseSafe
+# binary is at zig-out/bin/mdjam
 ```
 
 ## Usage
@@ -103,11 +100,9 @@ Watch mode is automatically disabled when reading from stdin.
 | `b` / `PgUp` | Page up |
 | `g` | Jump to top |
 | `G` | Jump to bottom |
-| `Tab` / `Shift+Tab` | Focus next / previous executable block |
+| `Tab` | Focus next executable block |
 | `Enter` | Execute focused block |
 | `Esc` | Cancel running block |
-| `Ctrl+Shift+C` | Copy selected text to clipboard |
-| `Ctrl+Shift+V` | Paste into focused input |
 | `r` | Reload document |
 | `s` | Toggle state store panel |
 | `?` | Show / hide keyboard help |
@@ -216,17 +211,14 @@ Values written by a block with `id: my-block` are stored under both the bare key
 
 | Indicator | Meaning |
 |---|---|
-| `Ready` | Never run |
-| `Blocked — missing: FOO` | A required input has no value yet |
-| `Running…` | Script is executing |
-| `Done (exit 0)` | Succeeded |
-| `Failed (exit 1)` | Exited non-zero |
-| `Cancelled` | Cancelled with `Esc` |
-| `Skipped — dep failed: <id>` | A dependency block failed |
+| `idle` | Never run |
+| `running...` | Script is executing |
+| `done` | Succeeded |
+| `failed` | Exited non-zero |
+| `cancelled` | Cancelled with `Esc` |
+| `blocked` | Prerequisites failed |
 
 ## Using mdjam as an agent tool
-
-`mdjam --agent-docs` prints a compact reference optimised for pasting into a tool description field.
 
 The non-interactive pattern: pipe markdown in via `--stdin`, mark blocks `auto: true` so they run without keypresses, and use `--delegate` to forward the focused block's stdout/stderr and exit code back to the caller.
 
@@ -245,44 +237,23 @@ Usage:
 - Mark bash fences with `auto: true` to execute them on load.
 - `--delegate` forwards the focused block's stdout/stderr and mirrors its exit code.
 - `echo "::set-output name=KEY::value"` inside a block captures KEY into the state store.
-- Run `mdjam --agent-docs` for full reference.
-```
-
-### Example — MCP / JSON tool definition
-
-```json
-{
-  "name": "mdjam",
-  "description": "<paste output of: mdjam --agent-docs>",
-  "inputSchema": {
-    "type": "object",
-    "required": ["markdown"],
-    "properties": {
-      "markdown": {
-        "type": "string",
-        "description": "Markdown with bash code fences to execute"
-      }
-    }
-  }
-}
-```
-
-The wrapper script that bridges the JSON call to the CLI:
-
-```bash
-#!/usr/bin/env bash
-# reads {"markdown":"..."} from stdin, runs it, returns stdout
-markdown=$(jq -r '.markdown')
-printf '%s' "$markdown" | mdjam --stdin --delegate --no-watch
 ```
 
 ## Development
 
 ```bash
-bun test           # run unit tests
-bun run build      # compile to dist/
-bun run dev        # watch mode — rebuilds on source change
-bun start -- <file.md>   # run the source directly without building
-```
+# Debug build and run
+zig build run -- examples/01-hello.md
 
-The required Bun version is pinned in `.mise.toml`; see [Prerequisites](#prerequisites) for setup.
+# Run tests
+zig build test
+
+# Format source
+zig fmt src/
+
+# Release build (statically linked)
+zig build -Doptimize=ReleaseSafe
+
+# Cross-compile
+zig build -Dtarget=aarch64-linux-musl -Doptimize=ReleaseSafe
+```

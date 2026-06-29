@@ -6,70 +6,33 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$ROOT_DIR"
 
-if [[ $# -gt 0 ]]; then
-  VERSION="$1"
-else
-  VERSION="$(bun -e "console.log(require('./package.json').version)")"
-fi
+VERSION="$(grep '\.version' build.zig.zon | head -1 | grep -oP '"[^"]+"' | tr -d '"')"
 OUTDIR="$ROOT_DIR/release/mdjam-v${VERSION}"
 
-TARGETS=(
-  bun-linux-x64
-  bun-linux-arm64
-  bun-linux-x64-musl
-  bun-linux-arm64-musl
-  bun-darwin-x64
-  bun-darwin-arm64
-  bun-windows-x64
+# Zig cross-compilation targets → output platform names
+declare -A TARGETS=(
+  ["x86_64-linux-musl"]="linux-x64-musl"
+  ["aarch64-linux-musl"]="linux-arm64-musl"
+  ["x86_64-macos"]="darwin-x64"
+  ["aarch64-macos"]="darwin-arm64"
 )
-
-# @opentui/core uses dynamic imports for all platform packages; bun's bundler
-# resolves them statically, so all variants must be present in node_modules
-# before cross-compiling. We install them temporarily and restore on exit.
-OPENTUI_VERSION="$(bun -e "console.log(require('./node_modules/@opentui/core/package.json').version)")"
-
-cp package.json package.json.release-bak
-cp bun.lock bun.lock.release-bak
-
-restore_packages() {
-  echo "Restoring package files..."
-  mv package.json.release-bak package.json
-  mv bun.lock.release-bak bun.lock
-  bun install --silent
-}
-trap restore_packages EXIT
-
-echo "Installing cross-compilation dependencies (@opentui/core ${OPENTUI_VERSION})..."
-bun add --dev \
-  "@opentui/core-darwin-x64@${OPENTUI_VERSION}" \
-  "@opentui/core-darwin-arm64@${OPENTUI_VERSION}" \
-  "@opentui/core-linux-arm64@${OPENTUI_VERSION}" \
-  "@opentui/core-linux-arm64-musl@${OPENTUI_VERSION}" \
-  "@opentui/core-win32-x64@${OPENTUI_VERSION}" \
-  "@opentui/core-win32-arm64@${OPENTUI_VERSION}"
-# bun add respects cpu/os restrictions and skips extracting cross-platform packages to
-# node_modules; re-run with wildcard overrides to force all variants into node_modules
-bun install --cpu='*' --os='*'
 
 echo "Building mdjam v${VERSION}"
 mkdir -p "$OUTDIR"
 
-for TARGET in "${TARGETS[@]}"; do
-  case "$TARGET" in
-    bun-windows-*)  EXT=".exe" ;;
-    *)              EXT="" ;;
-  esac
+for ZIG_TARGET in "${!TARGETS[@]}"; do
+  PLATFORM="${TARGETS[$ZIG_TARGET]}"
+  OUTFILE="$OUTDIR/mdjam-${PLATFORM}"
+  echo "  compiling $ZIG_TARGET -> mdjam-${PLATFORM}"
 
-  # Strip the "bun-" compiler prefix from the user-facing filename
-  PLATFORM="${TARGET#bun-}"
-  OUTFILE="$OUTDIR/mdjam-${PLATFORM}${EXT}"
-  echo "  compiling $TARGET -> $OUTFILE"
+  zig build \
+    -Dtarget="$ZIG_TARGET" \
+    -Doptimize=ReleaseSafe \
+    --prefix "$OUTDIR" \
+    --prefix-exe-dir ""
 
-  bun build "$ROOT_DIR/src/cli.ts" \
-    --compile \
-    --target "$TARGET" \
-    --minify \
-    --outfile "$OUTFILE"
+  # zig build --prefix puts the binary at $prefix/mdjam; rename to platform-qualified name
+  mv "$OUTDIR/mdjam" "$OUTFILE"
 done
 
 echo "Generating checksums..."

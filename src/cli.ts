@@ -1,21 +1,10 @@
 #!/usr/bin/env bun
 import { parseArgs } from 'node:util'
-import { resolve, dirname, join } from 'node:path'
+import { resolve } from 'node:path'
 import { existsSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { addDefaultParsers } from '@opentui/core'
 import { runApp } from './app.js'
 import type { ThemeName } from './theme/themes.js'
 import pkg from '../package.json'
-
-const _require = createRequire(import.meta.url)
-const bashPkgDir = dirname(_require.resolve('tree-sitter-bash/package.json'))
-addDefaultParsers([{
-  filetype: 'bash',
-  aliases: ['sh', 'shell'],
-  wasm: join(bashPkgDir, 'tree-sitter-bash.wasm'),
-  queries: { highlights: [join(bashPkgDir, 'queries/highlights.scm')] },
-}])
 
 const HELP = `\
 Usage: mdjam <file> [options]

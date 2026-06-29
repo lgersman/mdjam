@@ -16,6 +16,11 @@ import type { FenceMetadata } from '../parser/metadata.js'
 import type { BlockRunner } from '../engine/BlockRunner.js'
 import type { StateStore } from '../engine/StateStore.js'
 
+type HighlightCallback = (
+  highlights: [number, number, string, unknown?][],
+  context: { content: string; filetype: string; syntaxStyle: SyntaxStyle },
+) => [number, number, string][] | undefined | Promise<[number, number, string][] | undefined>
+
 export interface CodeFenceOptions {
   token: Tokens.Code
   cleanBody: string
@@ -25,6 +30,7 @@ export interface CodeFenceOptions {
   stateStore: StateStore
   syntaxStyle: SyntaxStyle
   executionBlocked: boolean
+  onHighlight?: HighlightCallback
   onExecute: () => Promise<void>
 }
 
@@ -108,6 +114,7 @@ export class CodeFenceRenderable extends BoxRenderable {
       conceal: false,
       flexShrink: 0,
       paddingLeft: 2,
+      onHighlight: opts.onHighlight as any,
     }))
 
     // Inline OutputPanel: ScrollBoxRenderable + line-tracking state

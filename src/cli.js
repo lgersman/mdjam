@@ -3,20 +3,10 @@
 
 // src/cli.ts
 import { parseArgs } from "util";
-import { resolve, dirname, join } from "path";
+import { resolve } from "path";
 import { existsSync } from "fs";
-import { createRequire } from "module";
-import { addDefaultParsers } from "@opentui/core";
 import { runApp } from "./app.js";
 import pkg from "../package.json";
-var _require = createRequire(import.meta.url);
-var bashPkgDir = dirname(_require.resolve("tree-sitter-bash/package.json"));
-addDefaultParsers([{
-  filetype: "bash",
-  aliases: ["sh", "shell"],
-  wasm: join(bashPkgDir, "tree-sitter-bash.wasm"),
-  queries: { highlights: [join(bashPkgDir, "queries/highlights.scm")] }
-}]);
 var HELP = `Usage: mdjam <file> [options]
        mdjam --stdin [options]
 
@@ -158,5 +148,5 @@ if (values.stdin) {
   });
 }
 
-//# debugId=E4455B5694CA6B5664756E2164756E21
+//# debugId=1DE4808B946FADEA64756E2164756E21
 //# sourceMappingURL=cli.js.map

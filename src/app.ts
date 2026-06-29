@@ -25,6 +25,7 @@ import { LifecycleRunner } from './engine/LifecycleRunner.js'
 import { ExecutionEngine, type FenceBlock } from './engine/ExecutionEngine.js'
 import { checkPrerequisites } from './engine/Prerequisites.js'
 import { createSyntaxStyle, type ThemeName } from './theme/themes.js'
+import { preloadShikiHighlighter, createShikiHighlightCallback } from './syntax/shikiHighlighter.js'
 import { BORDER_DEFAULT, DANGER, FG_MUTED } from './theme/colors.js'
 import { CodeFenceRenderable } from './components/CodeFenceRenderable.js'
 import { TocRenderable, type HeadingEntry } from './components/TocRenderable.js'
@@ -80,7 +81,7 @@ function _fillBlockquoteChildren(self: any, renderable: any, token: any, idPrefi
 }
 function _hasStructuredBlocks(token: any) {
   return (token.tokens ?? []).some(
-    (t: any) => t.type === 'table' || t.type === 'code' || t.type === 'hr' || t.type === 'blockquote'
+    (t: any) => t.type === 'table' || t.type === 'code' || t.type === 'hr'
   )
 }
 ;(MarkdownRenderable.prototype as any).createBlockquoteRenderable = (function (orig: Function) {
@@ -127,6 +128,8 @@ export async function runApp(options: AppOptions): Promise<void> {
   })
 
   const syntaxStyle = createSyntaxStyle(options.theme)
+  const shikiHighlight = createShikiHighlightCallback(options.theme)
+  preloadShikiHighlighter()
 
   // Top-level layout: full-screen flex column
   const rootBox = new BoxRenderable(renderer, {
@@ -356,6 +359,7 @@ export async function runApp(options: AppOptions): Promise<void> {
         stateStore: currentStateStore,
         syntaxStyle,
         executionBlocked,
+        onHighlight: shikiHighlight,
         onExecute: async () => {
           const block: FenceBlock = {
             id: blockId,
@@ -452,7 +456,24 @@ export async function runApp(options: AppOptions): Promise<void> {
         }
         return defaultRenderable
       }
-      return codeBlockRenderer(token, context)
+      const codeResult = codeBlockRenderer(token, context)
+      if (codeResult !== undefined) return codeResult
+
+      // Intercept all remaining code blocks and apply Shiki highlighting
+      if (token.type === 'code') {
+        const codeToken = token as Tokens.Code
+        return new CodeRenderable(renderer, {
+          content: codeToken.text,
+          filetype: codeToken.lang ?? '',
+          syntaxStyle: context.syntaxStyle,
+          onHighlight: shikiHighlight as any,
+          drawUnstyledText: true,
+          width: '100%',
+          marginBottom: 1,
+        })
+      }
+
+      return undefined
     }
 
     currentMarkdown = new MarkdownRenderable(renderer, {

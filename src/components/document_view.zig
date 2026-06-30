@@ -456,17 +456,14 @@ pub const DocumentView = struct {
         const fm = self.frontmatter orelse return start_row;
         var row = start_row;
 
-        const dim: vaxis.Style = .{ .fg = .{ .rgb = .{ 0x5C, 0x63, 0x70 } } };
-        const key_s: vaxis.Style = .{ .fg = .{ .rgb = .{ 0x61, 0xAF, 0xEF } } };
-        const val_s: vaxis.Style = .{ .fg = .{ .rgb = .{ 0xAB, 0xB2, 0xBF } } };
-        const sec_s: vaxis.Style = .{ .fg = .{ .rgb = .{ 0xE5, 0xC0, 0x7B } } };
+        const s: vaxis.Style = .{ .fg = .{ .index = 8 } };
 
         if (!self.verbose) {
             // Non-verbose: italic description + thin separator
             if (fm.description) |desc| {
                 writeStr(surface, 0, row, desc, .{ .fg = .{ .index = 8 }, .italic = true });
                 row += 1;
-                writeFillRow(surface, row, width, "─", dim);
+                writeFillRow(surface, row, width, "─", s);
                 row += 1;
             }
             return row;
@@ -478,67 +475,61 @@ pub const DocumentView = struct {
             fm.defaults.count() > 0;
         if (!has_content) return start_row;
 
-        // Opening banner: ─── frontmatter ───...
-        writeBanner(surface, row, width, "─── frontmatter ", dim);
+        // Opening rule (no label)
+        writeFillRow(surface, row, width, "─", s);
         row += 1;
 
         if (fm.title) |title| {
-            writeStr(surface, 0, row, "title", key_s);
-            writeStr(surface, 5, row, ": ", dim);
-            writeStr(surface, 7, row, title, val_s);
+            writeStr(surface, 0, row, "title: ", s);
+            writeStr(surface, 7, row, title, s);
             row += 1;
         }
         if (fm.description) |desc| {
-            writeStr(surface, 0, row, "description", key_s);
-            writeStr(surface, 11, row, ": ", dim);
-            writeStr(surface, 13, row, desc, val_s);
+            writeStr(surface, 0, row, "description: ", s);
+            writeStr(surface, 13, row, desc, s);
             row += 1;
         }
 
         const has_tools = fm.prerequisites.tools.len > 0;
         const has_env = fm.prerequisites.env.len > 0;
         if (has_tools or has_env) {
-            writeStr(surface, 0, row, "prerequisites", sec_s);
-            writeStr(surface, 13, row, ":", dim);
+            writeStr(surface, 0, row, "prerequisites:", s);
             row += 1;
             if (has_tools) {
-                writeStr(surface, 2, row, "tools", key_s);
-                writeStr(surface, 7, row, ":", dim);
+                writeStr(surface, 2, row, "tools:", s);
                 row += 1;
                 for (fm.prerequisites.tools) |tool| {
-                    writeStr(surface, 4, row, "- ", dim);
-                    writeStr(surface, 6, row, tool, val_s);
+                    writeStr(surface, 4, row, "- ", s);
+                    writeStr(surface, 6, row, tool, s);
                     row += 1;
                 }
             }
             if (has_env) {
-                writeStr(surface, 2, row, "env", key_s);
-                writeStr(surface, 5, row, ":", dim);
+                writeStr(surface, 2, row, "env:", s);
                 row += 1;
                 for (fm.prerequisites.env) |env| {
-                    writeStr(surface, 4, row, "- ", dim);
-                    writeStr(surface, 6, row, env, val_s);
+                    writeStr(surface, 4, row, "- ", s);
+                    writeStr(surface, 6, row, env, s);
                     row += 1;
                 }
             }
         }
 
         if (fm.defaults.count() > 0) {
-            writeStr(surface, 0, row, "defaults", sec_s);
-            writeStr(surface, 8, row, ":", dim);
+            writeStr(surface, 0, row, "defaults:", s);
             row += 1;
             var it = fm.defaults.iterator();
             while (it.next()) |entry| {
                 const k = entry.key_ptr.*;
-                writeStr(surface, 2, row, k, key_s);
-                writeStr(surface, @intCast(2 + k.len), row, ": ", dim);
-                writeStr(surface, @intCast(4 + k.len), row, entry.value_ptr.*, val_s);
+                writeStr(surface, 2, row, k, s);
+                writeStr(surface, @intCast(2 + k.len), row, ": ", s);
+                writeStr(surface, @intCast(4 + k.len), row, entry.value_ptr.*, s);
                 row += 1;
             }
         }
 
         // Closing rule
-        writeFillRow(surface, row, width, "─", dim);
+        writeFillRow(surface, row, width, "─", s);
         row += 1;
         return row;
     }

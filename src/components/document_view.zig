@@ -120,23 +120,77 @@ pub const DocumentView = struct {
     pub fn focusNextBlock(self: *DocumentView) void {
         if (self.code_fences.items.len == 0) return;
         if (self.focused_block) |fb| {
+            if (fb + 1 >= self.code_fences.items.len) return; // already at last
             self.code_fences.items[fb].focused = false;
-            self.focused_block = (fb + 1) % self.code_fences.items.len;
+            self.focused_block = fb + 1;
         } else {
             self.focused_block = 0;
         }
-        self.code_fences.items[self.focused_block.?].focused = true;
+        const new_fb = self.focused_block.?;
+        self.code_fences.items[new_fb].focused = true;
+        self.scrollToFence(new_fb);
     }
 
     pub fn focusPrevBlock(self: *DocumentView) void {
         if (self.code_fences.items.len == 0) return;
         if (self.focused_block) |fb| {
+            if (fb == 0) return; // already at first
             self.code_fences.items[fb].focused = false;
-            self.focused_block = if (fb == 0) self.code_fences.items.len - 1 else fb - 1;
+            self.focused_block = fb - 1;
         } else {
             self.focused_block = self.code_fences.items.len - 1;
         }
-        self.code_fences.items[self.focused_block.?].focused = true;
+        const new_fb = self.focused_block.?;
+        self.code_fences.items[new_fb].focused = true;
+        self.scrollToFence(new_fb);
+    }
+
+    fn scrollToFence(self: *DocumentView, fence_idx: usize) void {
+        self.scroll_offset = self.virtualRowOfFence(fence_idx);
+    }
+
+    fn virtualRowOfFence(self: *DocumentView, target_idx: usize) u32 {
+        const doc = self.document orelse return 0;
+        var vrow: u32 = 0;
+        var fi: usize = 0;
+        for (doc.blocks) |*block| {
+            switch (block.*) {
+                .code_fence => |*cf| {
+                    for (self.code_fences.items, 0..) |*cfw, i| {
+                        if (cfw.block == cf) {
+                            if (i == target_idx) return vrow;
+                            break;
+                        }
+                    }
+                },
+                else => {},
+            }
+            const h: u32 = @intCast(self.measureBlock(block, self.terminal_width, &fi));
+            vrow += h + 1;
+        }
+        return 0;
+    }
+
+    fn fenceAtVirtualRow(self: *DocumentView, target_vrow: u32) ?usize {
+        const doc = self.document orelse return null;
+        var vrow: u32 = 0;
+        var fi: usize = 0;
+        for (doc.blocks) |*block| {
+            const h: u32 = @intCast(self.measureBlock(block, self.terminal_width, &fi));
+            if (target_vrow >= vrow and target_vrow < vrow + h) {
+                switch (block.*) {
+                    .code_fence => |*cf| {
+                        for (self.code_fences.items, 0..) |*cfw, i| {
+                            if (cfw.block == cf) return i;
+                        }
+                    },
+                    else => {},
+                }
+                return null;
+            }
+            vrow += h + 1;
+        }
+        return null;
     }
 
     pub fn deselect(self: *DocumentView) void {
@@ -244,11 +298,10 @@ pub const DocumentView = struct {
                 } else if (key.matches('b', .{}) or key.matches(vaxis.Key.page_up, .{})) {
                     self.scrollUp(@max(1, self.terminal_height -| 2));
                     ctx.consumeAndRedraw();
-                } else if (key.matches('g', .{})) {
+                } else if (key.matches('g', .{}) or key.matches(vaxis.Key.home, .{}) or key.matches(vaxis.Key.kp_home, .{})) {
                     self.scroll_offset = 0;
                     ctx.consumeAndRedraw();
-                } else if (key.matches('G', .{})) {
-                    // Scroll to bottom - we'll just set a large value and clamp when drawing
+                } else if (key.matches('G', .{}) or key.matches(vaxis.Key.end, .{}) or key.matches(vaxis.Key.kp_end, .{})) {
                     self.scroll_offset = std.math.maxInt(u32);
                     ctx.consumeAndRedraw();
                 } else if (key.matches(vaxis.Key.tab, .{ .shift = true })) {
@@ -279,6 +332,20 @@ pub const DocumentView = struct {
                     // Pass to focused code fence
                     if (self.focused_block) |fb| {
                         try self.code_fences.items[fb].handleEvent(ctx, event);
+                    }
+                }
+            },
+            .mouse => |mouse| {
+                if (mouse.type == .press and mouse.button == .left and mouse.row >= 0) {
+                    const vrow: u32 = self.scroll_offset +| @as(u32, @intCast(mouse.row));
+                    if (self.fenceAtVirtualRow(vrow)) |fi| {
+                        if (self.focused_block != fi) {
+                            if (self.focused_block) |fb| self.code_fences.items[fb].focused = false;
+                            self.focused_block = fi;
+                            self.code_fences.items[fi].focused = true;
+                            self.scrollToFence(fi);
+                            ctx.consumeAndRedraw();
+                        }
                     }
                 }
             },

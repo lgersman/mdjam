@@ -270,11 +270,7 @@ pub const App = struct {
             .init => {
                 try self.loadFile();
                 self.syncStatusBar();
-                // Disable mouse tracking so the terminal can handle native text selection.
-                // The app is keyboard-only, so mouse events are not needed.
-                if (self.vxfw_app) |vxfw_a| {
-                    try vxfw_a.vx.setMouseMode(vxfw_a.tty.writer(), false);
-                }
+
                 if (self.anyFenceRunning()) {
                     try ctx.tick(80, self.widget());
                 }
@@ -352,6 +348,7 @@ pub const App = struct {
             },
             else => {
                 try self.doc_view.handleEvent(ctx, event);
+                self.syncStatusBar();
             },
         }
     }

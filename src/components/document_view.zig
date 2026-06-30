@@ -712,7 +712,7 @@ fn renderList(
             writeStr(surface, bullet_col, row, n, .{ .fg = t.list_bullet });
             content_col = indent + @as(u16, @intCast(n.len)) + 1;
         } else if (item.checked) |checked| {
-            const checkbox = if (checked) "[x]" else "[ ]";
+            const checkbox = if (checked) "[✓]" else "[ ]";
             writeStr(surface, bullet_col, row, checkbox, .{ .fg = t.list_bullet });
             content_col = indent + 4; // 3-char checkbox + 1 space
         } else {

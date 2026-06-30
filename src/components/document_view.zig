@@ -343,7 +343,6 @@ pub const DocumentView = struct {
                             if (self.focused_block) |fb| self.code_fences.items[fb].focused = false;
                             self.focused_block = fi;
                             self.code_fences.items[fi].focused = true;
-                            self.scrollToFence(fi);
                             ctx.consumeAndRedraw();
                         }
                     }
@@ -970,8 +969,9 @@ fn measureParagraphHeight(spans: []const md.Span, width: u16) usize {
     for (spans) |span| {
         len += spanTextLen(span);
     }
+    if (len == 0) return 0;
     if (width == 0) return 1;
-    return (len + width - 1) / width + 1;
+    return (len + width - 1) / width;
 }
 
 fn spanTextLen(span: md.Span) usize {

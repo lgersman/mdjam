@@ -22,6 +22,7 @@ pub const App = struct {
     io: std.Io,
     environ_map: *const std.process.Environ.Map,
     file_path: []const u8,
+    vxfw_app: ?*vxfw.App,
 
     // Owned document state (reset on reload)
     doc_arena: std.heap.ArenaAllocator,
@@ -66,12 +67,13 @@ pub const App = struct {
         self.io = io;
         self.environ_map = environ_map;
         self.file_path = file_path;
+        self.vxfw_app = null;
         self.doc_arena = std.heap.ArenaAllocator.init(allocator);
         self.document = null;
         self.fm = null;
         self.store = state_store.StateStore.init(allocator);
         self.doc_view = DocumentView.init(allocator, &self.store, environ_map, io);
-        self.status_bar_widget = .{ .hints = status_bar.DEFAULT_HINTS };
+        self.status_bar_widget = StatusBar.init();
         self.state_panel = .{ .store = &self.store, .visible = false };
         self.help_panel = .{ .visible = false };
         self.show_state = false;
@@ -80,6 +82,32 @@ pub const App = struct {
         self.terminal_height = 24;
 
         return self;
+    }
+
+    /// Set the vxfw.App reference for suspend/resume support.
+    /// Must be called before loadFile() for interactive blocks to work.
+    pub fn setVxfwApp(self: *App, vxfw_app_ptr: *vxfw.App) void {
+        self.vxfw_app = vxfw_app_ptr;
+        // Wire up suspend/resume callbacks on doc_view
+        self.doc_view.suspend_fn = suspendTuiCallback;
+        self.doc_view.resume_fn = resumeTuiCallback;
+        self.doc_view.suspend_ctx = self;
+    }
+
+    fn suspendTuiCallback(ctx: ?*anyopaque) void {
+        const self: *App = @ptrCast(@alignCast(ctx.?));
+        if (self.vxfw_app) |vxfw_a| {
+            vxfw_a.vx.exitAltScreen(vxfw_a.tty.writer()) catch {};
+            vxfw_a.tty.writer().flush() catch {};
+        }
+    }
+
+    fn resumeTuiCallback(ctx: ?*anyopaque) void {
+        const self: *App = @ptrCast(@alignCast(ctx.?));
+        if (self.vxfw_app) |vxfw_a| {
+            vxfw_a.vx.enterAltScreen(vxfw_a.tty.writer()) catch {};
+            vxfw_a.tty.writer().flush() catch {};
+        }
     }
 
     pub fn destroy(self: *App) void {
@@ -179,7 +207,7 @@ pub const App = struct {
         for (self.doc_view.code_fences.items) |*cf| {
             if (cf.block.metadata) |meta| {
                 if (meta.auto) {
-                    cf.startExecution() catch {};
+                    self.doc_view.executeWithDeps(cf) catch {};
                 }
             }
         }
@@ -203,6 +231,14 @@ pub const App = struct {
         return self.draw(ctx);
     }
 
+    fn syncStatusBar(self: *App) void {
+        const focused = if (self.doc_view.code_fences.items.len > 0)
+            &self.doc_view.code_fences.items[self.doc_view.focused_block]
+        else
+            null;
+        self.status_bar_widget.setFocusedFence(focused);
+    }
+
     fn anyFenceRunning(self: *App) bool {
         for (self.doc_view.code_fences.items) |*cf| {
             if (cf.status == .running) return true;
@@ -223,14 +259,16 @@ pub const App = struct {
     pub fn handleEvent(self: *App, ctx: *vxfw.EventContext, event: vxfw.Event) anyerror!void {
         switch (event) {
             .tick => {
+                self.status_bar_widget.update();
                 if (self.anyFenceNeedsRedraw()) ctx.redraw = true;
                 if (self.anyFenceRunning()) {
                     try ctx.tick(80, self.widget());
+                    ctx.redraw = true;
                 }
             },
             .init => {
                 try self.loadFile();
-                // Start polling tick if any block is running (auto-execute)
+                self.syncStatusBar();
                 if (self.anyFenceRunning()) {
                     try ctx.tick(80, self.widget());
                 }
@@ -263,6 +301,7 @@ pub const App = struct {
                 }
                 if (key.matches('r', .{})) {
                     try self.loadFile();
+                    self.syncStatusBar();
                     ctx.redraw = true;
                     return;
                 }
@@ -281,6 +320,7 @@ pub const App = struct {
 
                 // Forward navigation and execution keys to document view
                 try self.doc_view.handleEvent(ctx, event);
+                self.syncStatusBar();
                 // If a block started running, start the polling tick
                 if (self.anyFenceRunning()) {
                     try ctx.tick(80, self.widget());

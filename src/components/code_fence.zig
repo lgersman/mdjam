@@ -28,6 +28,11 @@ pub const CodeFenceWidget = struct {
     // Redraw notification (set by callback, polled by app)
     needs_redraw: bool,
 
+    // Optional suspend/resume callbacks for interactive blocks
+    suspend_fn: ?block_runner.SuspendFn,
+    resume_fn: ?block_runner.ResumeFn,
+    suspend_ctx: ?*anyopaque,
+
     pub const OutputLine = struct {
         text: []const u8,
         is_stderr: bool,
@@ -53,6 +58,9 @@ pub const CodeFenceWidget = struct {
             .runner = block_runner.Runner.init(),
             .runner_thread = null,
             .needs_redraw = false,
+            .suspend_fn = null,
+            .resume_fn = null,
+            .suspend_ctx = null,
         };
     }
 
@@ -138,11 +146,17 @@ pub const CodeFenceWidget = struct {
         self.output_scroll = 0;
         self.status = .running;
 
-        // Check if blocked (dependencies not satisfied)
-        if (self.block.metadata) |meta| {
-            for (meta.depends) |dep| {
-                _ = dep; // For now we don't check dependencies at run time
-            }
+        const is_interactive = if (self.block.metadata) |meta| meta.interactive else false;
+
+        if (is_interactive and self.suspend_fn != null) {
+            // Run interactive block in a thread (it will block until done)
+            const ctx_ptr = try self.allocator.create(ExecCtx);
+            ctx_ptr.* = .{ .widget = self };
+
+            const thread = try std.Thread.spawn(.{}, interactiveThreadFn, .{ctx_ptr});
+            if (self.runner_thread) |old| old.detach();
+            self.runner_thread = thread;
+            return;
         }
 
         const ctx_ptr = try self.allocator.create(ExecCtx);
@@ -166,6 +180,20 @@ pub const CodeFenceWidget = struct {
 
         if (self.runner_thread) |old| old.detach();
         self.runner_thread = thread;
+    }
+
+    fn interactiveThreadFn(ctx: *ExecCtx) void {
+        const self = ctx.widget;
+        block_runner.runInteractive(
+            self.block.body,
+            self.allocator,
+            self.suspend_fn.?,
+            self.resume_fn.?,
+            self.suspend_ctx,
+            outputCallback,
+            doneCallback,
+            ctx,
+        );
     }
 
     const ExecCtx = struct {

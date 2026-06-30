@@ -4,6 +4,9 @@ const vxfw = vaxis.vxfw;
 const theme = @import("../theme.zig");
 const md = @import("../parser/markdown.zig");
 const CodeFenceWidget = @import("code_fence.zig").CodeFenceWidget;
+const block_runner = @import("../engine/block_runner.zig");
+const toc_mod = @import("toc_component.zig");
+const TocWidget = toc_mod.TocWidget;
 const state_store = @import("../engine/state_store.zig");
 
 const Allocator = std.mem.Allocator;
@@ -18,8 +21,14 @@ pub const DocumentView = struct {
     scroll_offset: u32,
     focused_block: usize, // index into code_fences
     code_fences: std.ArrayList(CodeFenceWidget),
+    toc_widgets: std.ArrayList(TocWidget),
     terminal_width: u16,
     terminal_height: u16,
+
+    // Optional suspend/resume callbacks for interactive blocks
+    suspend_fn: ?block_runner.SuspendFn,
+    resume_fn: ?block_runner.ResumeFn,
+    suspend_ctx: ?*anyopaque,
 
     pub fn init(
         allocator: Allocator,
@@ -36,42 +45,60 @@ pub const DocumentView = struct {
             .scroll_offset = 0,
             .focused_block = 0,
             .code_fences = std.ArrayList(CodeFenceWidget).empty,
+            .toc_widgets = std.ArrayList(TocWidget).empty,
             .terminal_width = 80,
             .terminal_height = 24,
+            .suspend_fn = null,
+            .resume_fn = null,
+            .suspend_ctx = null,
         };
     }
 
     pub fn deinit(self: *DocumentView) void {
         for (self.code_fences.items) |*cf| cf.deinit();
         self.code_fences.deinit(self.allocator);
+        for (self.toc_widgets.items) |*tw| tw.deinit();
+        self.toc_widgets.deinit(self.allocator);
     }
 
     pub fn setDocument(self: *DocumentView, doc: *const md.Document) Allocator.Error!void {
         // Deinit existing code fences
         for (self.code_fences.items) |*cf| cf.deinit();
         self.code_fences.clearRetainingCapacity();
+        for (self.toc_widgets.items) |*tw| tw.deinit();
+        self.toc_widgets.clearRetainingCapacity();
 
         self.document = doc;
         self.scroll_offset = 0;
         self.focused_block = 0;
 
-        // Create code fence widgets for executable blocks
+        // Create code fence widgets for executable blocks, and TOC widgets for toc blocks
         for (doc.blocks) |*block| {
             switch (block.*) {
                 .code_fence => |*cf| {
-                    // Only create widgets for bash blocks or blocks with metadata
-                    const is_executable = std.mem.eql(u8, cf.lang, "bash") or
-                        std.mem.eql(u8, cf.lang, "sh") or
-                        (cf.metadata != null);
-                    if (is_executable) {
-                        const cfw = try CodeFenceWidget.init(
-                            self.allocator,
-                            cf,
-                            self.store,
-                            self.environ_map,
-                            self.io,
-                        );
-                        try self.code_fences.append(self.allocator, cfw);
+                    if (std.mem.eql(u8, cf.lang, "toc")) {
+                        // Create a TOC widget for this block
+                        const tw = try TocWidget.init(self.allocator, doc, cf);
+                        try self.toc_widgets.append(self.allocator, tw);
+                    } else {
+                        // Only create widgets for bash blocks or blocks with metadata
+                        const is_executable = std.mem.eql(u8, cf.lang, "bash") or
+                            std.mem.eql(u8, cf.lang, "sh") or
+                            (cf.metadata != null);
+                        if (is_executable) {
+                            var cfw = try CodeFenceWidget.init(
+                                self.allocator,
+                                cf,
+                                self.store,
+                                self.environ_map,
+                                self.io,
+                            );
+                            // Propagate suspend/resume callbacks for interactive blocks
+                            cfw.suspend_fn = self.suspend_fn;
+                            cfw.resume_fn = self.resume_fn;
+                            cfw.suspend_ctx = self.suspend_ctx;
+                            try self.code_fences.append(self.allocator, cfw);
+                        }
                     }
                 },
                 else => {},
@@ -91,12 +118,74 @@ pub const DocumentView = struct {
         self.code_fences.items[self.focused_block].focused = true;
     }
 
+    pub fn focusPrevBlock(self: *DocumentView) void {
+        if (self.code_fences.items.len == 0) return;
+        self.code_fences.items[self.focused_block].focused = false;
+        self.focused_block = if (self.focused_block == 0)
+            self.code_fences.items.len - 1
+        else
+            self.focused_block - 1;
+        self.code_fences.items[self.focused_block].focused = true;
+    }
+
     pub fn runFocusedBlock(self: *DocumentView) anyerror!void {
         if (self.code_fences.items.len == 0) return;
         const cf = &self.code_fences.items[self.focused_block];
         if (cf.status != .running) {
-            try cf.startExecution();
+            try self.executeWithDeps(cf);
         }
+    }
+
+    fn findFenceById(self: *DocumentView, block_id: []const u8) ?*CodeFenceWidget {
+        for (self.code_fences.items) |*cf| {
+            const meta = cf.block.metadata orelse continue;
+            const id = meta.id orelse continue;
+            if (std.mem.eql(u8, id, block_id)) return cf;
+        }
+        return null;
+    }
+
+    pub fn executeWithDeps(self: *DocumentView, target: *CodeFenceWidget) !void {
+        // Collect dependency chain in execution order
+        var order = std.ArrayList(*CodeFenceWidget).empty;
+        defer order.deinit(self.allocator);
+
+        try self.collectDeps(target, &order, 0);
+
+        for (order.items) |fence| {
+            if (fence.status == .done) continue; // already succeeded
+            if (fence.status == .running) continue;
+            fence.startExecution() catch {};
+            // Wait synchronously for this dep to complete before proceeding
+            var waited: usize = 0;
+            while (fence.status == .running and waited < 30000) : (waited += 1) {
+                // sleep 1ms using libc nanosleep
+                const ts = std.c.timespec{ .sec = 0, .nsec = 1_000_000 };
+                _ = std.c.nanosleep(&ts, null);
+            }
+            if (fence.status != .done) return; // dep failed or timed out, stop chain
+        }
+    }
+
+    fn collectDeps(self: *DocumentView, fence: *CodeFenceWidget, order: *std.ArrayList(*CodeFenceWidget), depth: u8) !void {
+        if (depth > 20) return; // cycle guard
+        const meta = fence.block.metadata orelse {
+            // No metadata means no deps; just add the fence itself
+            for (order.items) |existing| {
+                if (existing == fence) return;
+            }
+            try order.append(self.allocator, fence);
+            return;
+        };
+        for (meta.depends) |dep_id| {
+            const dep = self.findFenceById(dep_id) orelse continue;
+            try self.collectDeps(dep, order, depth + 1);
+        }
+        // Avoid duplicates
+        for (order.items) |existing| {
+            if (existing == fence) return;
+        }
+        try order.append(self.allocator, fence);
     }
 
     pub fn widget(self: *DocumentView) vxfw.Widget {
@@ -145,13 +234,20 @@ pub const DocumentView = struct {
                     self.scroll_offset = std.math.maxInt(u32);
                     ctx.consumeAndRedraw();
                 } else if (key.matches(vaxis.Key.tab, .{})) {
-                    self.focusNextBlock();
+                    if (key.mods.shift) {
+                        self.focusPrevBlock();
+                    } else {
+                        self.focusNextBlock();
+                    }
                     ctx.consumeAndRedraw();
                 } else if (key.matches(vaxis.Key.enter, .{})) {
                     if (self.code_fences.items.len > 0) {
                         const cf = &self.code_fences.items[self.focused_block];
-                        try cf.handleEvent(ctx, event);
+                        if (cf.status != .running) {
+                            try self.executeWithDeps(cf);
+                        }
                     }
+                    ctx.consumeAndRedraw();
                 } else if (key.matches(vaxis.Key.escape, .{})) {
                     if (self.code_fences.items.len > 0) {
                         const cf = &self.code_fences.items[self.focused_block];
@@ -255,6 +351,13 @@ pub const DocumentView = struct {
             .heading => 1,
             .paragraph => |p| measureParagraphHeight(p.spans, width),
             .code_fence => |*cf| blk: {
+                // Check if it's a TOC block
+                if (std.mem.eql(u8, cf.lang, "toc")) {
+                    for (self.toc_widgets.items) |*tw| {
+                        if (tw.block == cf) break :blk tw.height();
+                    }
+                    break :blk 2; // fallback
+                }
                 // Find matching code fence widget
                 for (self.code_fences.items, 0..) |*cfw_item, i| {
                     if (cfw_item.block == cf) {
@@ -265,8 +368,20 @@ pub const DocumentView = struct {
                 break :blk countLines(cf.body) + 4;
             },
             .list => |l| measureListHeight(l.items),
-            .table => |t| t.rows.len + 3,
-            .blockquote => |bq| countLines(bq.content) + 2,
+            .table => |t| blk: {
+                // header + header-sep + rows + (row-seps between rows)
+                const n = t.rows.len;
+                break :blk 2 + n + if (n > 0) n - 1 else 0;
+            },
+            .blockquote => |bq| blk: {
+                var total: usize = 0;
+                var sub_fence_idx: usize = 0;
+                for (bq.blocks) |*sub| {
+                    total += self.measureBlock(sub, if (width > 2) width - 2 else width, &sub_fence_idx);
+                    total += 1; // blank line between sub-blocks
+                }
+                break :blk total;
+            },
             .horizontal_rule => 1,
             .blank => 0,
         };
@@ -302,7 +417,30 @@ pub const DocumentView = struct {
             .paragraph => |p| {
                 row = try renderSpans(arena, surface, p.spans, row, 0, width);
             },
-            .code_fence => |*cf| {
+            .code_fence => |*cf| toc_or_fence: {
+                // Check if it's a TOC block
+                if (std.mem.eql(u8, cf.lang, "toc")) {
+                    for (self.toc_widgets.items) |*tw| {
+                        if (tw.block == cf) {
+                            const child_ctx = vxfw.DrawContext{
+                                .arena = arena,
+                                .min = .{ .width = width, .height = 0 },
+                                .max = .{ .width = width, .height = null },
+                                .cell_size = .{ .width = 1, .height = 1 },
+                            };
+                            const child_surf = try tw.draw(child_ctx);
+                            for (0..child_surf.size.height) |r| {
+                                for (0..child_surf.size.width) |col| {
+                                    if (row + @as(u16, @intCast(r)) >= surface.size.height) break;
+                                    surface.writeCell(@intCast(col), @intCast(row + r), child_surf.readCell(col, r));
+                                }
+                            }
+                            row += child_surf.size.height;
+                            break :toc_or_fence;
+                        }
+                    }
+                    break :toc_or_fence;
+                }
                 // Find matching widget
                 for (self.code_fences.items, 0..) |*cfw, i| {
                     if (cfw.block == cf) {
@@ -337,13 +475,25 @@ pub const DocumentView = struct {
             },
             .blockquote => |bq| {
                 const border_style: vaxis.Style = .{ .fg = t.blockquote_border };
-                const content_style: vaxis.Style = .{ .fg = t.blockquote_fg };
-                var lines = std.mem.splitScalar(u8, bq.content, '\n');
-                while (lines.next()) |line| {
-                    if (row >= surface.size.height) break;
-                    writeStr(surface, 0, row, "│ ", border_style);
-                    writeStr(surface, 2, row, line, content_style);
-                    row += 1;
+                const inner_width: u16 = if (width > 2) width - 2 else width;
+                for (bq.blocks) |*sub_block| {
+                    const sub_h = self.measureBlock(sub_block, inner_width, fence_idx);
+                    if (sub_h == 0) continue;
+                    const clamped_h: u16 = @intCast(@min(sub_h, surface.size.height -| row));
+                    if (clamped_h == 0) break;
+                    const sub_surf = try vxfw.Surface.init(arena, self.widget(), .{ .width = inner_width, .height = clamped_h });
+                    var tmp_fence_idx: usize = 0;
+                    _ = try self.renderBlock(arena, sub_surf, sub_block, 0, inner_width, &tmp_fence_idx);
+                    // Copy sub surface rows to parent, with border at col 0
+                    for (0..sub_surf.size.height) |r| {
+                        if (row >= surface.size.height) break;
+                        writeStr(surface, 0, row, "│", border_style);
+                        for (0..inner_width) |cc| {
+                            const cell = sub_surf.readCell(cc, r);
+                            surface.writeCell(@intCast(cc + 2), row, cell);
+                        }
+                        row += 1;
+                    }
                 }
             },
             .horizontal_rule => {
@@ -552,19 +702,22 @@ fn renderList(
     for (items, 0..) |item, idx| {
         if (row >= surface.size.height) break;
 
-        // Bullet or number
+        // Bullet or number — content starts 1 space after the marker
         const bullet_col = indent;
-        const content_col = indent + 3;
+        var content_col: u16 = indent + 2; // default: 1-char bullet + 1 space
 
         if (ordered) {
             var buf: [8]u8 = undefined;
             const n = std.fmt.bufPrint(&buf, "{d}.", .{idx + 1}) catch "?";
             writeStr(surface, bullet_col, row, n, .{ .fg = t.list_bullet });
+            content_col = indent + @as(u16, @intCast(n.len)) + 1;
         } else if (item.checked) |checked| {
             const checkbox = if (checked) "[x]" else "[ ]";
             writeStr(surface, bullet_col, row, checkbox, .{ .fg = t.list_bullet });
+            content_col = indent + 4; // 3-char checkbox + 1 space
         } else {
-            writeStr(surface, bullet_col, row, "•", .{ .fg = t.list_bullet });
+            writeStr(surface, bullet_col, row, "•", .{});
+            content_col = indent + 2; // 1-char bullet + 1 space
         }
 
         // Content
@@ -595,57 +748,123 @@ fn renderTable(
     const border_style: vaxis.Style = .{ .fg = t.table_border };
     const header_style: vaxis.Style = .{ .bold = true };
 
-    // Calculate column widths
+    // Column inner widths (content only, without the surrounding "│ … │")
     var col_widths: [16]u16 = [_]u16{0} ** 16;
     const num_cols = @min(table.headers.len, 16);
 
     for (table.headers[0..num_cols], 0..) |h, c| {
-        col_widths[c] = @max(col_widths[c], @as(u16, @intCast(h.len)) + 2);
+        col_widths[c] = @max(col_widths[c], @as(u16, @intCast(h.len)));
     }
     for (table.rows) |data_row| {
         for (data_row, 0..) |cell, c| {
             if (c >= num_cols) break;
-            col_widths[c] = @max(col_widths[c], @as(u16, @intCast(cell.len)) + 2);
+            col_widths[c] = @max(col_widths[c], @as(u16, @intCast(cell.len)));
         }
     }
 
-    // Header
-    var cc: u16 = 0;
-    for (table.headers[0..num_cols], 0..) |h, c| {
-        writeStr(surface, cc, row, "│ ", border_style);
-        writeStr(surface, cc + 2, row, h, header_style);
-        cc += col_widths[c];
-    }
-    writeStr(surface, cc, row, "│", border_style);
+    // Draw a horizontal rule line: left + (─×width + junction) × N-1 + ─×width + right
+    const drawHRule = struct {
+        fn run(
+            sf: vxfw.Surface,
+            r: u16,
+            widths: *const [16]u16,
+            nc: usize,
+            mid: []const u8,
+            bsty: vaxis.Style,
+        ) void {
+            var x: u16 = 0;
+            for (0..nc) |c| {
+                // col_width content + 2 for the " " padding on each side
+                var di: u16 = 0;
+                while (di < widths[c] + 2) : (di += 1) {
+                    sf.writeCell(x, r, .{
+                        .char = .{ .grapheme = "─", .width = 1 },
+                        .style = bsty,
+                    });
+                    x += 1;
+                }
+                if (c < nc - 1) {
+                    writeStr(sf, x, r, mid, bsty);
+                    x += 1;
+                }
+            }
+        }
+    }.run;
+
+    // Draw a data row: │ padded-cell │ … │
+    const drawRow = struct {
+        fn run(
+            sf: vxfw.Surface,
+            r: u16,
+            widths: *const [16]u16,
+            nc: usize,
+            cells: []const []const u8,
+            aligns: []const md.Align,
+            sty: vaxis.Style,
+            bsty: vaxis.Style,
+        ) void {
+            var x: u16 = 0;
+            for (0..nc) |c| {
+                const cell: []const u8 = if (c < cells.len) cells[c] else "";
+                const col_w = widths[c];
+                const cell_len: u16 = @intCast(cell.len);
+                const cell_align: md.Align = if (c < aligns.len) aligns[c] else .none;
+
+                // Compute left padding for alignment
+                const slack: u16 = if (col_w > cell_len) col_w - cell_len else 0;
+                const left_pad: u16 = switch (cell_align) {
+                    .right => slack + 1,
+                    .center => slack / 2 + 1,
+                    else => 1,  // left / none
+                };
+
+                // Write " "×left_pad + content + " "×right_pad + " "
+                var px: u16 = 0;
+                while (px < left_pad) : (px += 1) {
+                    sf.writeCell(x, r, .{ .char = .{ .grapheme = " ", .width = 1 }, .style = sty });
+                    x += 1;
+                }
+                var ci: usize = 0;
+                var it = std.unicode.Utf8Iterator{ .bytes = cell, .i = 0 };
+                while (it.nextCodepointSlice()) |g| {
+                    if (ci >= col_w) break;
+                    sf.writeCell(x, r, .{ .char = .{ .grapheme = g, .width = 1 }, .style = sty });
+                    x += 1;
+                    ci += 1;
+                }
+                // Pad remaining to fill column + trailing space
+                const written: u16 = @intCast(ci);
+                var rp: u16 = written + left_pad;
+                while (rp <= col_w + 1) : (rp += 1) {
+                    sf.writeCell(x, r, .{ .char = .{ .grapheme = " ", .width = 1 }, .style = sty });
+                    x += 1;
+                }
+
+                // separator between columns; nothing after last column
+                if (c < nc - 1) {
+                    writeStr(sf, x, r, "│", bsty);
+                    x += 1;
+                }
+            }
+        }
+    }.run;
+
+    // Header row   Head  │  Head  │  Head
+    drawRow(surface, row, &col_widths, num_cols, table.headers[0..num_cols], &.{}, header_style, border_style);
     row += 1;
 
-    // Separator
-    cc = 0;
-    for (0..num_cols) |c| {
-        writeStr(surface, cc, row, "├", border_style);
-        var i: u16 = 0;
-        while (i < col_widths[c]) : (i += 1) {
-            surface.writeCell(cc + 1 + i, row, .{
-                .char = .{ .grapheme = "─", .width = 1 },
-                .style = border_style,
-            });
-        }
-        cc += col_widths[c] + 1;
-    }
-    writeStr(surface, cc, row, "┤", border_style);
+    // Header separator    ──────┼──────┼──────
+    drawHRule(surface, row, &col_widths, num_cols, "┼", border_style);
     row += 1;
 
-    // Data rows
-    for (table.rows) |data_row| {
-        cc = 0;
-        for (data_row, 0..) |cell, c| {
-            if (c >= num_cols) break;
-            writeStr(surface, cc, row, "│ ", border_style);
-            writeStr(surface, cc + 2, row, cell, .{});
-            cc += col_widths[c];
-        }
-        writeStr(surface, cc, row, "│", border_style);
+    // Data rows, each separated by ──────┼──────
+    for (table.rows, 0..) |data_row, ri| {
+        drawRow(surface, row, &col_widths, num_cols, data_row, table.alignments, .{}, border_style);
         row += 1;
+        if (ri + 1 < table.rows.len) {
+            drawHRule(surface, row, &col_widths, num_cols, "┼", border_style);
+            row += 1;
+        }
     }
 
     return row;

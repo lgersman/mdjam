@@ -59,6 +59,9 @@ pub fn main(init: std.process.Init) !void {
     var vxfw_app = try vxfw.App.init(io, gpa, init.environ_map, &tty_buf);
     defer vxfw_app.deinit();
 
+    // Wire up suspend/resume callbacks for interactive blocks
+    app.setVxfwApp(&vxfw_app);
+
     try vxfw_app.run(app.widget(), .{});
 }
 

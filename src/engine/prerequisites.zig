@@ -1,4 +1,7 @@
 const std = @import("std");
+const c = @cImport({
+    @cInclude("sys/wait.h");
+});
 
 const Allocator = std.mem.Allocator;
 
@@ -58,15 +61,15 @@ fn toolAvailable(io: std.Io, tool: []const u8) bool {
     child.stderr = null;
     child.stdin = null;
     const pid = child.id orelse return false;
-    var wstatus: u32 = 0;
-    _ = std.os.linux.waitpid(pid, &wstatus, 0);
+    var wstatus: c_int = 0;
+    _ = c.waitpid(@as(c.pid_t, @intCast(pid)), &wstatus, 0);
     child.id = null;
-    const exited = (wstatus & 0x7f) == 0;
-    const code: u8 = if (exited) @truncate((wstatus >> 8) & 0xff) else 1;
+    const exited: bool = c.WIFEXITED(wstatus);
+    const code: u8 = if (exited) @intCast(c.WEXITSTATUS(wstatus)) else 1;
     return code == 0;
 }
 
 pub fn freeChecks(allocator: Allocator, checks: []const FailedCheck) void {
-    for (checks) |c| allocator.free(@constCast(c.name));
+    for (checks) |ch| allocator.free(@constCast(ch.name));
     allocator.free(checks);
 }

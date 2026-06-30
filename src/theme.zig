@@ -5,12 +5,7 @@ pub const Style = vaxis.Style;
 
 pub const Theme = struct {
     // Headings
-    heading1: Style,
-    heading2: Style,
-    heading3: Style,
-    heading4: Style,
-    heading5: Style,
-    heading6: Style,
+    heading: Style,
 
     // Code
     code_bg: Color,
@@ -53,16 +48,11 @@ pub const Theme = struct {
 };
 
 pub const dark: Theme = .{
-    .heading1 = .{ .fg = .{ .rgb = .{ 0x61, 0xAF, 0xEF } }, .bold = true },
-    .heading2 = .{ .fg = .{ .rgb = .{ 0x98, 0xC3, 0x79 } }, .bold = true },
-    .heading3 = .{ .fg = .{ .rgb = .{ 0xE5, 0xC0, 0x7B } }, .bold = true },
-    .heading4 = .{ .fg = .{ .rgb = .{ 0xC6, 0x78, 0xDD } }, .bold = true },
-    .heading5 = .{ .fg = .{ .rgb = .{ 0x56, 0xB6, 0xC2 } }, .bold = true },
-    .heading6 = .{ .fg = .{ .rgb = .{ 0xAB, 0xB2, 0xBF } }, .bold = true },
+    .heading = .{ .fg = .{ .rgb = .{ 0x61, 0xAF, 0xEF } }, .bold = true },
 
     .code_bg = .{ .rgb = .{ 0x2C, 0x32, 0x3C } },
     .code_fg = .{ .rgb = .{ 0xAB, 0xB2, 0xBF } },
-    .code_inline_fg = .{ .rgb = .{ 0xE0, 0x6C, 0x75 } },
+    .code_inline_fg = .{ .rgb = .{ 0xC8, 0xB8, 0x8A } },
 
     .bold_style = .{ .bold = true },
     .italic_style = .{ .italic = true },
@@ -95,12 +85,6 @@ pub const dark: Theme = .{
 };
 
 pub fn headingStyle(t: *const Theme, level: u8) Style {
-    return switch (level) {
-        1 => t.heading1,
-        2 => t.heading2,
-        3 => t.heading3,
-        4 => t.heading4,
-        5 => t.heading5,
-        else => t.heading6,
-    };
+    _ = level;
+    return t.heading;
 }

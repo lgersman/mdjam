@@ -55,7 +55,7 @@ pub const Table = struct {
 };
 
 pub const Blockquote = struct {
-    content: []const u8,
+    blocks: []Block,
 };
 
 pub const Block = union(enum) {
@@ -107,7 +107,11 @@ fn freeBlock(allocator: Allocator, block: *Block) void {
             }
             allocator.free(t.rows);
         },
-        .blockquote, .horizontal_rule, .blank => {},
+        .blockquote => |bq| {
+            for (bq.blocks) |*sub| freeBlock(allocator, sub);
+            allocator.free(bq.blocks);
+        },
+        .horizontal_rule, .blank => {},
     }
 }
 
@@ -352,22 +356,25 @@ const Parser = struct {
 
         while (self.peek()) |line| {
             if (!std.mem.startsWith(u8, line, ">")) break;
-            const content = if (line.len > 1 and line[1] == ' ') line[2..] else line[1..];
-            try content_lines.append(self.allocator, content);
+            const stripped = if (line.len > 1 and line[1] == ' ') line[2..] else line[1..];
+            try content_lines.append(self.allocator, stripped);
             _ = self.advance();
         }
 
+        // Join stripped lines into a string, then re-parse as markdown
         var buf = std.ArrayList(u8).empty;
         defer buf.deinit(self.allocator);
         for (content_lines.items) |cl| {
             try buf.appendSlice(self.allocator, cl);
             try buf.append(self.allocator, '\n');
         }
-        // The content is stored as a reference into the source; since we can't do that here,
-        // we just keep the joined content. We use the arena allocator strategy: store in arena.
-        const content = try self.allocator.dupe(u8, buf.items);
 
-        return .{ .blockquote = .{ .content = content } };
+        // Re-parse the stripped content as a fresh markdown document
+        var sub_parser = try Parser.init(self.allocator, buf.items);
+        defer sub_parser.deinit();
+        const sub_blocks = try sub_parser.parse();
+        // sub_blocks is already allocated; transfer ownership
+        return .{ .blockquote = .{ .blocks = sub_blocks } };
     }
 
     fn parseTable(self: *Parser) Allocator.Error!Block {

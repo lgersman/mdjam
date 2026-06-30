@@ -1,5 +1,8 @@
 const std = @import("std");
 const state_store = @import("state_store.zig");
+const c = @cImport({
+    @cInclude("sys/wait.h");
+});
 
 const Allocator = std.mem.Allocator;
 
@@ -84,8 +87,8 @@ fn runScript(
         var key_buf = try allocator.alloc(u8, "MDJAM_".len + kv.key.len);
         defer allocator.free(key_buf);
         @memcpy(key_buf[0..6], "MDJAM_");
-        for (kv.key, 0..) |c, idx| {
-            key_buf[6 + idx] = if (std.ascii.isAlphanumeric(c)) std.ascii.toUpper(c) else '_';
+        for (kv.key, 0..) |ch, idx| {
+            key_buf[6 + idx] = if (std.ascii.isAlphanumeric(ch)) std.ascii.toUpper(ch) else '_';
         }
         try env_map.put(key_buf, kv.value);
     }
@@ -125,15 +128,15 @@ fn runScript(
         child.stderr = null;
     }
 
-    // Use raw Linux waitpid to avoid std.Io.Threaded issues
+    // Use C waitpid to avoid std.Io.Threaded issues
     const pid = child.id orelse return error.RunFailed;
-    var wstatus: u32 = 0;
-    _ = std.os.linux.waitpid(pid, &wstatus, 0);
+    var wstatus: c_int = 0;
+    _ = c.waitpid(@as(c.pid_t, @intCast(pid)), &wstatus, 0);
     child.id = null;
     child.stdin = null;
 
-    const exited = (wstatus & 0x7f) == 0;
-    const exit_code: u8 = if (exited) @truncate((wstatus >> 8) & 0xff) else 1;
+    const exited: bool = c.WIFEXITED(wstatus);
+    const exit_code: u8 = if (exited) @intCast(c.WEXITSTATUS(wstatus)) else 1;
 
     return .{
         .exit_code = exit_code,

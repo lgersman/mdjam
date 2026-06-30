@@ -1,5 +1,8 @@
 const std = @import("std");
 const state_store = @import("state_store.zig");
+const c = @cImport({
+    @cInclude("sys/wait.h");
+});
 
 const Allocator = std.mem.Allocator;
 
@@ -120,8 +123,8 @@ fn runSync(runner: *Runner, opts: RunOptions) void {
         var key_buf = opts.allocator.alloc(u8, "MDJAM_".len + kv.key.len) catch return;
         defer opts.allocator.free(key_buf);
         @memcpy(key_buf[0..6], "MDJAM_");
-        for (kv.key, 0..) |c, idx| {
-            key_buf[6 + idx] = if (std.ascii.isAlphanumeric(c)) std.ascii.toUpper(c) else '_';
+        for (kv.key, 0..) |ch, idx| {
+            key_buf[6 + idx] = if (std.ascii.isAlphanumeric(ch)) std.ascii.toUpper(ch) else '_';
         }
         env_map.put(key_buf, kv.value) catch return;
     }
@@ -164,7 +167,7 @@ fn runSync(runner: *Runner, opts: RunOptions) void {
         readAndEmit(opts, stderr_file, &stderr_buf, true);
     }
 
-    // Use raw Linux waitpid syscall to avoid std.Io.Threaded deadlocks from std.Thread.
+    // Use C waitpid to avoid std.Io.Threaded deadlocks from std.Thread.
     const pid = child.id orelse {
         while (!runner.mutex.tryLock()) { std.atomic.spinLoopHint(); }
         runner.status = .failed;
@@ -172,16 +175,16 @@ fn runSync(runner: *Runner, opts: RunOptions) void {
         opts.done_cb(opts.cb_ctx, .{ .exit_code = 1, .status = .failed });
         return;
     };
-    var wstatus: u32 = 0;
-    _ = std.os.linux.waitpid(pid, &wstatus, 0);
+    var wstatus: c_int = 0;
+    _ = c.waitpid(@as(c.pid_t, @intCast(pid)), &wstatus, 0);
     // Clear child fields so child.wait isn't called again
     child.id = null;
     child.stdout = null;
     child.stderr = null;
     child.stdin = null;
 
-    const exited = (wstatus & 0x7f) == 0;
-    const exit_byte: u8 = if (exited) @truncate((wstatus >> 8) & 0xff) else 1;
+    const exited: bool = c.WIFEXITED(wstatus);
+    const exit_byte: u8 = if (exited) @intCast(c.WEXITSTATUS(wstatus)) else 1;
 
     while (!runner.mutex.tryLock()) { std.atomic.spinLoopHint(); }
     const was_cancelled = runner.status == .cancelled;
@@ -252,4 +255,58 @@ fn parseSetOutputLines(opts: RunOptions, stdout: []const u8) void {
         const value = rest[double_colon + 2 ..];
         opts.store.set(key, value, opts.block_id) catch {};
     }
+}
+
+pub const SuspendFn = *const fn (ctx: ?*anyopaque) void;
+pub const ResumeFn = *const fn (ctx: ?*anyopaque) void;
+
+/// Run an interactive block with inherited stdin/stdout/stderr.
+/// Calls suspend_fn before running (to allow TUI suspend) and resume_fn after.
+/// Blocks the calling thread until the script exits.
+pub fn runInteractive(
+    script: []const u8,
+    allocator: Allocator,
+    suspend_fn: SuspendFn,
+    resume_fn: ResumeFn,
+    suspend_ctx: ?*anyopaque,
+    output_cb: OutputCallback,
+    done_cb: DoneCallback,
+    cb_ctx: ?*anyopaque,
+) void {
+    suspend_fn(suspend_ctx);
+
+    // Fork and exec bash with inherited stdio
+    const pid_raw = std.c.fork();
+    if (pid_raw < 0) {
+        resume_fn(suspend_ctx);
+        output_cb(cb_ctx, "(interactive: fork failed)", true);
+        done_cb(cb_ctx, .{ .exit_code = 1, .status = .failed });
+        return;
+    }
+
+    if (pid_raw == 0) {
+        // Child process: exec bash -c <script>
+        const script_z = allocator.dupeZ(u8, script) catch std.process.exit(1);
+        const bash_z: [*:0]const u8 = "/bin/bash";
+        const c_arg_z: [*:0]const u8 = "-c";
+        const argv: [*:null]const ?[*:0]const u8 = &[_:null]?[*:0]const u8{
+            bash_z,
+            c_arg_z,
+            script_z.ptr,
+        };
+        _ = std.c.execve(bash_z, argv, std.c.environ);
+        std.process.exit(1);
+    }
+
+    // Parent: wait for child
+    var wstatus: c_int = 0;
+    _ = c.waitpid(@as(c.pid_t, @intCast(pid_raw)), &wstatus, 0);
+    const exited: bool = c.WIFEXITED(wstatus);
+    const exit_code: u8 = if (exited) @intCast(c.WEXITSTATUS(wstatus)) else 1;
+
+    resume_fn(suspend_ctx);
+
+    const status: RunStatus = if (exit_code == 0) .done else .failed;
+    output_cb(cb_ctx, if (exit_code == 0) "(interactive block completed)" else "(interactive block failed)", false);
+    done_cb(cb_ctx, .{ .exit_code = exit_code, .status = status });
 }

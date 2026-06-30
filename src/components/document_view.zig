@@ -9,6 +9,7 @@ const toc_mod = @import("toc_component.zig");
 const TocWidget = toc_mod.TocWidget;
 const state_store = @import("../engine/state_store.zig");
 const highlighter = @import("highlighter.zig");
+const fm_mod = @import("../parser/frontmatter.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -20,6 +21,7 @@ pub const DocumentView = struct {
     io: std.Io,
 
     verbose: bool,
+    frontmatter: ?*const fm_mod.Frontmatter,
     scroll_offset: u32,
     focused_block: ?usize, // index into code_fences; null = no block focused
     code_fences: std.ArrayList(CodeFenceWidget),
@@ -46,6 +48,7 @@ pub const DocumentView = struct {
             .environ_map = environ_map,
             .io = io,
             .verbose = verbose,
+            .frontmatter = null,
             .scroll_offset = 0,
             .focused_block = null,
             .code_fences = std.ArrayList(CodeFenceWidget).empty,
@@ -151,7 +154,7 @@ pub const DocumentView = struct {
 
     fn virtualRowOfFence(self: *DocumentView, target_idx: usize) u32 {
         const doc = self.document orelse return 0;
-        var vrow: u32 = 0;
+        var vrow: u32 = self.frontmatterHeaderHeight();
         var fi: usize = 0;
         for (doc.blocks) |*block| {
             switch (block.*) {
@@ -173,7 +176,7 @@ pub const DocumentView = struct {
 
     fn fenceAtVirtualRow(self: *DocumentView, target_vrow: u32) ?usize {
         const doc = self.document orelse return null;
-        var vrow: u32 = 0;
+        var vrow: u32 = self.frontmatterHeaderHeight();
         var fi: usize = 0;
         for (doc.blocks) |*block| {
             const h: u32 = @intCast(self.measureBlock(block, self.terminal_width, &fi));
@@ -393,7 +396,7 @@ pub const DocumentView = struct {
         const virtual_surface = try vxfw.Surface.init(ctx.arena, self.widget(), .{ .width = width, .height = virtual_height });
 
         var fence_idx: usize = 0;
-        var vrow: u16 = 0;
+        var vrow: u16 = self.renderFrontmatterHeader(virtual_surface, 0, width);
 
         for (doc.blocks) |*block| {
             if (vrow >= virtual_height) break;
@@ -423,8 +426,125 @@ pub const DocumentView = struct {
         return output_surface;
     }
 
+    fn frontmatterHeaderHeight(self: *const DocumentView) u16 {
+        const fm = self.frontmatter orelse return 0;
+
+        if (!self.verbose) {
+            // Non-verbose: description + separator
+            return if (fm.description != null) 2 else 0;
+        }
+
+        // Verbose: count YAML lines
+        var h: u16 = 0;
+        if (fm.title != null) h += 1;
+        if (fm.description != null) h += 1;
+        const has_tools = fm.prerequisites.tools.len > 0;
+        const has_env = fm.prerequisites.env.len > 0;
+        if (has_tools or has_env) {
+            h += 1; // "prerequisites:"
+            if (has_tools) h += 1 + @as(u16, @intCast(fm.prerequisites.tools.len)); // "  tools:" + items
+            if (has_env) h += 1 + @as(u16, @intCast(fm.prerequisites.env.len));     // "  env:" + items
+        }
+        if (fm.defaults.count() > 0) {
+            h += 1 + @as(u16, @intCast(fm.defaults.count())); // "defaults:" + items
+        }
+        if (h == 0) return 0;
+        return h + 2; // opening banner + closing rule
+    }
+
+    fn renderFrontmatterHeader(self: *const DocumentView, surface: vxfw.Surface, start_row: u16, width: u16) u16 {
+        const fm = self.frontmatter orelse return start_row;
+        var row = start_row;
+
+        const dim: vaxis.Style = .{ .fg = .{ .rgb = .{ 0x5C, 0x63, 0x70 } } };
+        const key_s: vaxis.Style = .{ .fg = .{ .rgb = .{ 0x61, 0xAF, 0xEF } } };
+        const val_s: vaxis.Style = .{ .fg = .{ .rgb = .{ 0xAB, 0xB2, 0xBF } } };
+        const sec_s: vaxis.Style = .{ .fg = .{ .rgb = .{ 0xE5, 0xC0, 0x7B } } };
+
+        if (!self.verbose) {
+            // Non-verbose: italic description + thin separator
+            if (fm.description) |desc| {
+                writeStr(surface, 0, row, desc, .{ .fg = .{ .index = 8 }, .italic = true });
+                row += 1;
+                writeFillRow(surface, row, width, "─", dim);
+                row += 1;
+            }
+            return row;
+        }
+
+        // Verbose: check there's something to show
+        const has_content = fm.title != null or fm.description != null or
+            fm.prerequisites.tools.len > 0 or fm.prerequisites.env.len > 0 or
+            fm.defaults.count() > 0;
+        if (!has_content) return start_row;
+
+        // Opening banner: ─── frontmatter ───...
+        writeBanner(surface, row, width, "─── frontmatter ", dim);
+        row += 1;
+
+        if (fm.title) |title| {
+            writeStr(surface, 0, row, "title", key_s);
+            writeStr(surface, 5, row, ": ", dim);
+            writeStr(surface, 7, row, title, val_s);
+            row += 1;
+        }
+        if (fm.description) |desc| {
+            writeStr(surface, 0, row, "description", key_s);
+            writeStr(surface, 11, row, ": ", dim);
+            writeStr(surface, 13, row, desc, val_s);
+            row += 1;
+        }
+
+        const has_tools = fm.prerequisites.tools.len > 0;
+        const has_env = fm.prerequisites.env.len > 0;
+        if (has_tools or has_env) {
+            writeStr(surface, 0, row, "prerequisites", sec_s);
+            writeStr(surface, 13, row, ":", dim);
+            row += 1;
+            if (has_tools) {
+                writeStr(surface, 2, row, "tools", key_s);
+                writeStr(surface, 7, row, ":", dim);
+                row += 1;
+                for (fm.prerequisites.tools) |tool| {
+                    writeStr(surface, 4, row, "- ", dim);
+                    writeStr(surface, 6, row, tool, val_s);
+                    row += 1;
+                }
+            }
+            if (has_env) {
+                writeStr(surface, 2, row, "env", key_s);
+                writeStr(surface, 5, row, ":", dim);
+                row += 1;
+                for (fm.prerequisites.env) |env| {
+                    writeStr(surface, 4, row, "- ", dim);
+                    writeStr(surface, 6, row, env, val_s);
+                    row += 1;
+                }
+            }
+        }
+
+        if (fm.defaults.count() > 0) {
+            writeStr(surface, 0, row, "defaults", sec_s);
+            writeStr(surface, 8, row, ":", dim);
+            row += 1;
+            var it = fm.defaults.iterator();
+            while (it.next()) |entry| {
+                const k = entry.key_ptr.*;
+                writeStr(surface, 2, row, k, key_s);
+                writeStr(surface, @intCast(2 + k.len), row, ": ", dim);
+                writeStr(surface, @intCast(4 + k.len), row, entry.value_ptr.*, val_s);
+                row += 1;
+            }
+        }
+
+        // Closing rule
+        writeFillRow(surface, row, width, "─", dim);
+        row += 1;
+        return row;
+    }
+
     fn measureContent(self: *DocumentView, doc: *const md.Document, width: u16) usize {
-        var total: usize = 0;
+        var total: usize = self.frontmatterHeaderHeight();
         var fence_idx: usize = 0;
         for (doc.blocks) |*block| {
             total += self.measureBlock(block, width, &fence_idx);
@@ -629,6 +749,25 @@ fn renderPlainCodeFence(
     row += 1;
 
     return row;
+}
+
+fn writeFillRow(surface: vxfw.Surface, row: u16, width: u16, grapheme: []const u8, style: vaxis.Style) void {
+    for (0..width) |c| {
+        surface.writeCell(@intCast(c), row, .{ .char = .{ .grapheme = grapheme, .width = 1 }, .style = style });
+    }
+}
+
+fn writeBanner(surface: vxfw.Surface, row: u16, width: u16, label: []const u8, style: vaxis.Style) void {
+    var c: u16 = 0;
+    var it = std.unicode.Utf8Iterator{ .bytes = label, .i = 0 };
+    while (it.nextCodepointSlice()) |g| {
+        if (c >= width) break;
+        surface.writeCell(c, row, .{ .char = .{ .grapheme = g, .width = 1 }, .style = style });
+        c += 1;
+    }
+    while (c < width) : (c += 1) {
+        surface.writeCell(c, row, .{ .char = .{ .grapheme = "─", .width = 1 }, .style = style });
+    }
 }
 
 fn writePlainBoxTop(surface: vxfw.Surface, row: u16, width: u16, style: vaxis.Style) void {

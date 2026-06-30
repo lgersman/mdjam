@@ -132,6 +132,7 @@ pub const App = struct {
             fm.deinit(self.allocator);
             self.fm = null;
         }
+        self.doc_view.frontmatter = null;
 
         // Read file using std.Io.Dir.cwd()
         const source = std.Io.Dir.cwd().readFileAlloc(
@@ -203,6 +204,7 @@ pub const App = struct {
         if (self.document) |*doc| {
             try self.doc_view.setDocument(doc);
         }
+        self.doc_view.frontmatter = if (self.fm) |*fm| fm else null;
 
         // Auto-execute blocks with auto:true
         for (self.doc_view.code_fences.items) |*cf| {

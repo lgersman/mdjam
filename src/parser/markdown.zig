@@ -345,7 +345,7 @@ const Parser = struct {
 
         return .{ .code_fence = .{
             .lang = try self.allocator.dupe(u8, lang),
-            .body = meta_result.body,
+            .body = std.mem.trimEnd(u8, meta_result.body, "\n"),
             .raw_body = raw_body,
             .metadata = meta_result.meta,
         } };

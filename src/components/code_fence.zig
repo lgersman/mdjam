@@ -234,14 +234,15 @@ pub const CodeFenceWidget = struct {
             if (meta.description != null) h += 1;
         }
 
-        // Code lines
+        // Code lines + box borders
         var code_lines: u16 = 0;
         var it = std.mem.splitScalar(u8, self.block.body, '\n');
         while (it.next()) |_| code_lines += 1;
         h += code_lines + 2; // +2 for top/bottom border
 
-        // Status bar
-        h += 1;
+        // Status bar only when auto-executed or already run
+        const show_status = (if (self.block.metadata) |m| m.auto else false) or self.status != .idle;
+        if (show_status) h += 1;
 
         // Output area (if any)
         if (self.output_lines.items.len > 0) {
@@ -257,70 +258,56 @@ pub const CodeFenceWidget = struct {
         const size: vxfw.Size = .{ .width = width, .height = h };
         const surface = try vxfw.Surface.init(ctx.arena, self.widget(), size);
 
-        const bg = theme.dark.code_bg;
         const code_fg = theme.dark.code_fg;
         const border_fg = if (self.focused) theme.dark.focused_border else theme.dark.unfocused_border;
-
-        // Fill background
-        for (0..h) |row| {
-            for (0..width) |col| {
-                surface.writeCell(@intCast(col), @intCast(row), .{
-                    .char = .{ .grapheme = " ", .width = 1 },
-                    .style = .{ .bg = bg },
-                });
-            }
-        }
+        const border_style: vaxis.Style = .{ .fg = border_fg };
 
         var row: u16 = 0;
 
         // Description
         if (self.block.metadata) |meta| {
             if (meta.description) |desc| {
-                const desc_style: vaxis.Style = .{ .fg = .{ .index = 8 }, .italic = true, .bg = bg };
+                const desc_style: vaxis.Style = .{ .fg = .{ .index = 8 }, .italic = true };
                 writeStr(surface, 2, row, "# ", desc_style);
                 writeStr(surface, 4, row, desc, desc_style);
                 row += 1;
             }
         }
 
-        // Top border with language label
-        const lang_label = self.block.lang;
-        writeBorder(surface, 0, row, width, border_fg, bg);
-        if (lang_label.len > 0) {
-            writeStr(surface, 2, row, " ", .{ .fg = border_fg, .bg = bg });
-            writeStr(surface, 3, row, lang_label, .{ .fg = .{ .rgb = .{ 0xE5, 0xC0, 0x7B } }, .bg = bg });
-            writeStr(surface, @intCast(3 + lang_label.len), row, " ", .{ .fg = border_fg, .bg = bg });
-        }
+        // Top border: ┌─...─┐
+        writeBoxTop(surface, row, width, border_style);
         row += 1;
 
-        // Code body
+        // Code body with side borders
         var code_it = std.mem.splitScalar(u8, self.block.body, '\n');
         while (code_it.next()) |code_line| {
             if (row >= h - 1) break;
-            writeStr(surface, 2, row, code_line, .{ .fg = code_fg, .bg = bg });
+            surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+            writeStr(surface, 2, row, code_line, .{ .fg = code_fg });
+            if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
             row += 1;
         }
 
-        // Bottom border
+        // Bottom border: └─...─┘
         if (row < h) {
-            writeBorder(surface, 0, row, width, border_fg, bg);
+            writeBoxBottom(surface, row, width, border_style);
             row += 1;
         }
 
-        // Status bar
-        if (row < h) {
+        // Status bar only when auto-executed or already run
+        const show_status = (if (self.block.metadata) |m| m.auto else false) or self.status != .idle;
+        if (show_status and row < h) {
             const status_text = statusText(self.status);
             const status_style = statusStyle(self.status);
-            writeStr(surface, 0, row, " [", .{ .fg = .{ .index = 8 }, .bg = bg });
+            writeStr(surface, 0, row, " [", .{ .fg = .{ .index = 8 } });
             writeStr(surface, 2, row, status_text, status_style);
-            writeStr(surface, @intCast(2 + status_text.len), row, "]", .{ .fg = .{ .index = 8 }, .bg = bg });
+            writeStr(surface, @intCast(2 + status_text.len), row, "]", .{ .fg = .{ .index = 8 } });
             row += 1;
         }
 
         // Output area
         if (self.output_lines.items.len > 0 and row < h) {
-            const out_style: vaxis.Style = .{ .fg = .{ .index = 8 }, .bg = bg };
-            writeStr(surface, 0, row, " ─── output ────────────────────────────────────────────", out_style);
+            writeStr(surface, 0, row, " ─── output ────────────────────────────────────────────", .{ .fg = .{ .index = 8 } });
             row += 1;
 
             const max_display: usize = @min(self.output_lines.items.len -| self.output_scroll, h -| row);
@@ -329,7 +316,6 @@ pub const CodeFenceWidget = struct {
                 const line = self.output_lines.items[self.output_scroll + i];
                 const out_line_style: vaxis.Style = .{
                     .fg = if (line.is_stderr) .{ .rgb = .{ 0xE0, 0x6C, 0x75 } } else code_fg,
-                    .bg = bg,
                 };
                 writeStr(surface, 2, row, line.text, out_line_style);
                 row += 1;
@@ -362,13 +348,25 @@ fn statusStyle(status: block_runner.RunStatus) vaxis.Style {
     };
 }
 
-fn writeBorder(surface: vxfw.Surface, x: u16, y: u16, width: u16, fg: vaxis.Color, bg: vaxis.Color) void {
-    const style: vaxis.Style = .{ .fg = fg, .bg = bg };
-    for (0..width) |col| {
-        surface.writeCell(@intCast(x + col), y, .{
-            .char = .{ .grapheme = "─", .width = 1 },
-            .style = style,
-        });
+fn writeBoxTop(surface: vxfw.Surface, row: u16, width: u16, style: vaxis.Style) void {
+    if (width == 0) return;
+    surface.writeCell(0, row, .{ .char = .{ .grapheme = "┌", .width = 1 }, .style = style });
+    if (width >= 2) {
+        for (1..width - 1) |col| {
+            surface.writeCell(@intCast(col), row, .{ .char = .{ .grapheme = "─", .width = 1 }, .style = style });
+        }
+        surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "┐", .width = 1 }, .style = style });
+    }
+}
+
+fn writeBoxBottom(surface: vxfw.Surface, row: u16, width: u16, style: vaxis.Style) void {
+    if (width == 0) return;
+    surface.writeCell(0, row, .{ .char = .{ .grapheme = "└", .width = 1 }, .style = style });
+    if (width >= 2) {
+        for (1..width - 1) |col| {
+            surface.writeCell(@intCast(col), row, .{ .char = .{ .grapheme = "─", .width = 1 }, .style = style });
+        }
+        surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "┘", .width = 1 }, .style = style });
     }
 }
 

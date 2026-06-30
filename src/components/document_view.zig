@@ -519,43 +519,48 @@ fn renderPlainCodeFence(
     t: *const theme.Theme,
 ) u16 {
     var row = start_row;
-    const bg = t.code_bg;
-    const code_fg = t.code_fg;
+    const border_style: vaxis.Style = .{ .fg = t.unfocused_border };
 
-    // Fill with background
-    for (0..width) |c| {
-        surface.writeCell(@intCast(c), row, .{
-            .char = .{ .grapheme = "─", .width = 1 },
-            .style = .{ .fg = t.unfocused_border, .bg = bg },
-        });
-    }
-    if (cf.lang.len > 0) {
-        writeStr(surface, 1, row, cf.lang, .{ .fg = .{ .rgb = .{ 0xE5, 0xC0, 0x7B } }, .bg = bg });
-    }
+    // Top border: ┌─...─┐
+    writePlainBoxTop(surface, row, width, border_style);
     row += 1;
 
     var lines = std.mem.splitScalar(u8, cf.body, '\n');
     while (lines.next()) |line| {
         if (row >= surface.size.height) break;
-        for (0..width) |c| {
-            surface.writeCell(@intCast(c), row, .{
-                .char = .{ .grapheme = " ", .width = 1 },
-                .style = .{ .bg = bg },
-            });
-        }
-        writeStr(surface, 2, row, line, .{ .fg = code_fg, .bg = bg });
+        surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+        writeStr(surface, 2, row, line, .{ .fg = t.code_fg });
+        if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
         row += 1;
     }
 
-    for (0..width) |c| {
-        surface.writeCell(@intCast(c), row, .{
-            .char = .{ .grapheme = "─", .width = 1 },
-            .style = .{ .fg = t.unfocused_border, .bg = bg },
-        });
-    }
+    // Bottom border: └─...─┘
+    writePlainBoxBottom(surface, row, width, border_style);
     row += 1;
 
     return row;
+}
+
+fn writePlainBoxTop(surface: vxfw.Surface, row: u16, width: u16, style: vaxis.Style) void {
+    if (width == 0) return;
+    surface.writeCell(0, row, .{ .char = .{ .grapheme = "┌", .width = 1 }, .style = style });
+    if (width >= 2) {
+        for (1..width - 1) |col| {
+            surface.writeCell(@intCast(col), row, .{ .char = .{ .grapheme = "─", .width = 1 }, .style = style });
+        }
+        surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "┐", .width = 1 }, .style = style });
+    }
+}
+
+fn writePlainBoxBottom(surface: vxfw.Surface, row: u16, width: u16, style: vaxis.Style) void {
+    if (width == 0) return;
+    surface.writeCell(0, row, .{ .char = .{ .grapheme = "└", .width = 1 }, .style = style });
+    if (width >= 2) {
+        for (1..width - 1) |col| {
+            surface.writeCell(@intCast(col), row, .{ .char = .{ .grapheme = "─", .width = 1 }, .style = style });
+        }
+        surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "┘", .width = 1 }, .style = style });
+    }
 }
 
 fn renderSpans(

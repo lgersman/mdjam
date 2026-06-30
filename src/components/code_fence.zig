@@ -235,20 +235,18 @@ pub const CodeFenceWidget = struct {
             if (meta.description != null) h += 1;
         }
 
-        // Code lines + box borders
+        // Code lines
         var code_lines: u16 = 0;
         var it = std.mem.splitScalar(u8, self.block.body, '\n');
         while (it.next()) |_| code_lines += 1;
-        h += code_lines + 2; // +2 for top/bottom border
+        h += code_lines;
 
-        // Status bar only when auto-executed or already run
-        const show_status = (if (self.block.metadata) |m| m.auto else false) or self.status != .idle;
-        if (show_status) h += 1;
-
-        // Output area (if any)
+        // Output inside box: separator + output lines
         if (self.output_lines.items.len > 0) {
-            h += @intCast(@min(self.output_lines.items.len, 10) + 1);
+            h += 1 + @as(u16, @intCast(@min(self.output_lines.items.len, 10)));
         }
+
+        h += 2; // top + bottom border
 
         return @max(h, 4);
     }
@@ -291,65 +289,32 @@ pub const CodeFenceWidget = struct {
             row += 1;
         }
 
-        // Bottom border: └─...─┘
-        if (row < h) {
-            writeBoxBottom(surface, row, width, border_style);
-            row += 1;
-        }
-
-        // Status bar only when auto-executed or already run
-        const show_status = (if (self.block.metadata) |m| m.auto else false) or self.status != .idle;
-        if (show_status and row < h) {
-            const status_text = statusText(self.status);
-            const status_style = statusStyle(self.status);
-            writeStr(surface, 0, row, " [", .{ .fg = .{ .index = 8 } });
-            writeStr(surface, 2, row, status_text, status_style);
-            writeStr(surface, @intCast(2 + status_text.len), row, "]", .{ .fg = .{ .index = 8 } });
-            row += 1;
-        }
-
-        // Output area
-        if (self.output_lines.items.len > 0 and row < h) {
-            writeStr(surface, 0, row, " ─── output ────────────────────────────────────────────", .{ .fg = .{ .index = 8 } });
+        // Output separator + output lines inside the box
+        if (self.output_lines.items.len > 0 and row < h -| 1) {
+            writeBoxSeparator(surface, row, width, border_style);
             row += 1;
 
-            const max_display: usize = @min(self.output_lines.items.len -| self.output_scroll, h -| row);
+            const max_display: usize = @min(self.output_lines.items.len -| self.output_scroll, h -| row -| 1);
             for (0..max_display) |i| {
-                if (row >= h) break;
+                if (row >= h -| 1) break;
                 const line = self.output_lines.items[self.output_scroll + i];
-                const out_line_style: vaxis.Style = .{
+                const out_style: vaxis.Style = .{
                     .fg = if (line.is_stderr) .{ .rgb = .{ 0xE0, 0x6C, 0x75 } } else code_fg,
                 };
-                writeStr(surface, 2, row, line.text, out_line_style);
+                surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                writeStr(surface, 2, row, line.text, out_style);
+                if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
                 row += 1;
             }
         }
+
+        // Bottom border: └─...─┘
+        writeBoxBottom(surface, row, width, border_style);
 
         return surface;
     }
 };
 
-fn statusText(status: block_runner.RunStatus) []const u8 {
-    return switch (status) {
-        .idle => "idle",
-        .running => "running...",
-        .done => "done",
-        .failed => "failed",
-        .cancelled => "cancelled",
-        .blocked => "blocked",
-    };
-}
-
-fn statusStyle(status: block_runner.RunStatus) vaxis.Style {
-    return switch (status) {
-        .idle => theme.dark.status_idle,
-        .running => theme.dark.status_running,
-        .done => theme.dark.status_done,
-        .failed => theme.dark.status_failed,
-        .cancelled => theme.dark.status_failed,
-        .blocked => theme.dark.status_blocked,
-    };
-}
 
 fn writeBoxTop(surface: vxfw.Surface, row: u16, width: u16, style: vaxis.Style) void {
     if (width == 0) return;
@@ -359,6 +324,17 @@ fn writeBoxTop(surface: vxfw.Surface, row: u16, width: u16, style: vaxis.Style) 
             surface.writeCell(@intCast(col), row, .{ .char = .{ .grapheme = "─", .width = 1 }, .style = style });
         }
         surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "┐", .width = 1 }, .style = style });
+    }
+}
+
+fn writeBoxSeparator(surface: vxfw.Surface, row: u16, width: u16, style: vaxis.Style) void {
+    if (width == 0) return;
+    surface.writeCell(0, row, .{ .char = .{ .grapheme = "├", .width = 1 }, .style = style });
+    if (width >= 2) {
+        for (1..width - 1) |col| {
+            surface.writeCell(@intCast(col), row, .{ .char = .{ .grapheme = "─", .width = 1 }, .style = style });
+        }
+        surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "┤", .width = 1 }, .style = style });
     }
 }
 

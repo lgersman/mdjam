@@ -232,8 +232,8 @@ pub const App = struct {
     }
 
     fn syncStatusBar(self: *App) void {
-        const focused = if (self.doc_view.code_fences.items.len > 0)
-            &self.doc_view.code_fences.items[self.doc_view.focused_block]
+        const focused = if (self.doc_view.focused_block) |fb|
+            &self.doc_view.code_fences.items[fb]
         else
             null;
         self.status_bar_widget.setFocusedFence(focused);

@@ -64,33 +64,23 @@ pub const StatusBar = struct {
             });
         }
 
-        // Left side: block status + description (when a block is focused)
+        // Left side: status badge when a block is focused
         var left_len: u16 = 0;
         if (self.focused_fence) |fence| {
-            // Status badge
             const status_text = statusText(fence.status);
             const status_style = vaxis.Style{ .fg = statusFg(fence.status), .bg = bg, .bold = true };
             writeStr(surface, 1, 0, "[", .{ .fg = .{ .index = 8 }, .bg = bg });
             writeStr(surface, 2, 0, status_text, status_style);
             const after_status: u16 = @intCast(2 + status_text.len);
             writeStr(surface, after_status, 0, "]", .{ .fg = .{ .index = 8 }, .bg = bg });
-            left_len = after_status + 1;
-
-            // Description (if any)
-            if (fence.block.metadata) |meta| {
-                if (meta.description) |desc| {
-                    writeStr(surface, left_len + 1, 0, desc, .{ .fg = .{ .index = 7 }, .bg = bg });
-                    left_len += @intCast(desc.len + 1);
-                }
-            }
-            left_len += 1; // leading space
+            left_len = after_status + 2;
         }
 
-        // Right side: context-sensitive hints
+        // Right side: only keys that have an effect in the current context
         const hints = switch (self.context) {
-            .markdown => "j/k: scroll  g/G: top/bot  Tab: focus  Enter: run  s: state  ?: help  r: reload  q: quit",
-            .codeblock => "Enter: run  Esc: cancel  j/k: scroll output  Tab/S-Tab: next/prev  s: state  q: quit",
-            .running => "Esc: cancel  j/k: scroll output  q: quit",
+            .markdown => "j/k: scroll  g/G: top/bot  Tab: next block  q: quit",
+            .codeblock => "Enter: run  Tab/S-Tab: next/prev  Esc: deselect  q: quit",
+            .running => "Esc: cancel  q: quit",
         };
 
         // Truncate right side to fit after left side

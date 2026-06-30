@@ -20,7 +20,7 @@ pub const DocumentView = struct {
     io: std.Io,
 
     scroll_offset: u32,
-    focused_block: usize, // index into code_fences
+    focused_block: ?usize, // index into code_fences; null = no block focused
     code_fences: std.ArrayList(CodeFenceWidget),
     toc_widgets: std.ArrayList(TocWidget),
     terminal_width: u16,
@@ -44,7 +44,7 @@ pub const DocumentView = struct {
             .environ_map = environ_map,
             .io = io,
             .scroll_offset = 0,
-            .focused_block = 0,
+            .focused_block = null,
             .code_fences = std.ArrayList(CodeFenceWidget).empty,
             .toc_widgets = std.ArrayList(TocWidget).empty,
             .terminal_width = 80,
@@ -71,7 +71,7 @@ pub const DocumentView = struct {
 
         self.document = doc;
         self.scroll_offset = 0;
-        self.focused_block = 0;
+        self.focused_block = null;
 
         // Create code fence widgets for executable blocks, and TOC widgets for toc blocks
         for (doc.blocks) |*block| {
@@ -108,30 +108,43 @@ pub const DocumentView = struct {
 
         // Focus first code fence
         if (self.code_fences.items.len > 0) {
+            self.focused_block = 0;
             self.code_fences.items[0].focused = true;
         }
     }
 
     pub fn focusNextBlock(self: *DocumentView) void {
         if (self.code_fences.items.len == 0) return;
-        self.code_fences.items[self.focused_block].focused = false;
-        self.focused_block = (self.focused_block + 1) % self.code_fences.items.len;
-        self.code_fences.items[self.focused_block].focused = true;
+        if (self.focused_block) |fb| {
+            self.code_fences.items[fb].focused = false;
+            self.focused_block = (fb + 1) % self.code_fences.items.len;
+        } else {
+            self.focused_block = 0;
+        }
+        self.code_fences.items[self.focused_block.?].focused = true;
     }
 
     pub fn focusPrevBlock(self: *DocumentView) void {
         if (self.code_fences.items.len == 0) return;
-        self.code_fences.items[self.focused_block].focused = false;
-        self.focused_block = if (self.focused_block == 0)
-            self.code_fences.items.len - 1
-        else
-            self.focused_block - 1;
-        self.code_fences.items[self.focused_block].focused = true;
+        if (self.focused_block) |fb| {
+            self.code_fences.items[fb].focused = false;
+            self.focused_block = if (fb == 0) self.code_fences.items.len - 1 else fb - 1;
+        } else {
+            self.focused_block = self.code_fences.items.len - 1;
+        }
+        self.code_fences.items[self.focused_block.?].focused = true;
+    }
+
+    pub fn deselect(self: *DocumentView) void {
+        if (self.focused_block) |fb| {
+            self.code_fences.items[fb].focused = false;
+            self.focused_block = null;
+        }
     }
 
     pub fn runFocusedBlock(self: *DocumentView) anyerror!void {
-        if (self.code_fences.items.len == 0) return;
-        const cf = &self.code_fences.items[self.focused_block];
+        const fb = self.focused_block orelse return;
+        const cf = &self.code_fences.items[fb];
         if (cf.status != .running) {
             try self.executeWithDeps(cf);
         }
@@ -241,23 +254,27 @@ pub const DocumentView = struct {
                     self.focusNextBlock();
                     ctx.consumeAndRedraw();
                 } else if (key.matches(vaxis.Key.enter, .{})) {
-                    if (self.code_fences.items.len > 0) {
-                        const cf = &self.code_fences.items[self.focused_block];
+                    if (self.focused_block) |fb| {
+                        const cf = &self.code_fences.items[fb];
                         if (cf.status != .running) {
                             try self.executeWithDeps(cf);
                         }
                     }
                     ctx.consumeAndRedraw();
                 } else if (key.matches(vaxis.Key.escape, .{})) {
-                    if (self.code_fences.items.len > 0) {
-                        const cf = &self.code_fences.items[self.focused_block];
-                        try cf.handleEvent(ctx, event);
+                    if (self.focused_block) |fb| {
+                        const cf = &self.code_fences.items[fb];
+                        if (cf.status == .running) {
+                            try cf.handleEvent(ctx, event); // cancel
+                        } else {
+                            self.deselect();
+                            ctx.consumeAndRedraw();
+                        }
                     }
                 } else {
                     // Pass to focused code fence
-                    if (self.code_fences.items.len > 0) {
-                        const cf = &self.code_fences.items[self.focused_block];
-                        try cf.handleEvent(ctx, event);
+                    if (self.focused_block) |fb| {
+                        try self.code_fences.items[fb].handleEvent(ctx, event);
                     }
                 }
             },

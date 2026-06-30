@@ -40,6 +40,7 @@ pub const CodeFence = struct {
 pub const ListItem = struct {
     spans: []Span,
     children: []ListItem,
+    children_ordered: bool,
     checked: ?bool, // null = not a task item; true/false = checked/unchecked
 };
 
@@ -536,6 +537,7 @@ const Parser = struct {
         // Parse nested items (next lines with indent > base_indent + 2)
         var children_list = std.ArrayList(ListItem).empty;
         const child_indent = base_indent + 2;
+        var children_ordered = false;
 
         while (self.peek()) |next_line| {
             var ni: usize = 0;
@@ -543,13 +545,16 @@ const Parser = struct {
             if (ni < child_indent) break;
             if (!isListLine(next_line, child_indent)) break;
 
-            const child = try self.parseListItem(child_indent, isOrderedListLine(next_line, child_indent));
+            const child_is_ordered = isOrderedListLine(next_line, child_indent);
+            if (children_list.items.len == 0) children_ordered = child_is_ordered;
+            const child = try self.parseListItem(child_indent, child_is_ordered);
             try children_list.append(self.allocator, child);
         }
 
         return .{
             .spans = spans,
             .children = try children_list.toOwnedSlice(self.allocator),
+            .children_ordered = children_ordered,
             .checked = checked,
         };
     }

@@ -707,8 +707,7 @@ fn renderList(
         var content_col: u16 = indent + 2; // default: 1-char bullet + 1 space
 
         if (ordered) {
-            var buf: [8]u8 = undefined;
-            const n = std.fmt.bufPrint(&buf, "{d}.", .{idx + 1}) catch "?";
+            const n = std.fmt.allocPrint(arena, "{d}.", .{idx + 1}) catch "?";
             writeStr(surface, bullet_col, row, n, .{ .fg = t.list_bullet });
             content_col = indent + @as(u16, @intCast(n.len)) + 1;
         } else if (item.checked) |checked| {
@@ -730,7 +729,7 @@ fn renderList(
 
         // Children
         if (item.children.len > 0) {
-            row = try renderList(arena, surface, item.children, false, row, indent + 2, width, t);
+            row = try renderList(arena, surface, item.children, item.children_ordered, row, indent + 2, width, t);
         }
     }
     return row;

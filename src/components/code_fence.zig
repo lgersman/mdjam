@@ -5,6 +5,7 @@ const theme = @import("../theme.zig");
 const md = @import("../parser/markdown.zig");
 const block_runner = @import("../engine/block_runner.zig");
 const state_store = @import("../engine/state_store.zig");
+const highlighter = @import("highlighter.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -261,6 +262,7 @@ pub const CodeFenceWidget = struct {
         const code_fg = theme.dark.code_fg;
         const border_fg = if (self.focused) theme.dark.focused_border else theme.dark.unfocused_border;
         const border_style: vaxis.Style = .{ .fg = border_fg };
+        const tokens = try highlighter.tokenize(ctx.arena, self.block.body, self.block.lang);
 
         var row: u16 = 0;
 
@@ -283,7 +285,8 @@ pub const CodeFenceWidget = struct {
         while (code_it.next()) |code_line| {
             if (row >= h - 1) break;
             surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
-            writeStr(surface, 2, row, code_line, .{ .fg = code_fg });
+            const line_start = @intFromPtr(code_line.ptr) - @intFromPtr(self.block.body.ptr);
+            writeHighlightedStr(surface, 2, row, code_line, line_start, tokens, .{ .fg = code_fg });
             if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
             row += 1;
         }
@@ -367,6 +370,30 @@ fn writeBoxBottom(surface: vxfw.Surface, row: u16, width: u16, style: vaxis.Styl
             surface.writeCell(@intCast(col), row, .{ .char = .{ .grapheme = "─", .width = 1 }, .style = style });
         }
         surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "┘", .width = 1 }, .style = style });
+    }
+}
+
+fn writeHighlightedStr(
+    surface: vxfw.Surface,
+    col: u16,
+    row: u16,
+    s: []const u8,
+    byte_offset: usize,
+    tokens: []const highlighter.Token,
+    default_style: vaxis.Style,
+) void {
+    var c = col;
+    var off: usize = 0;
+    var it = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
+    while (it.nextCodepointSlice()) |grapheme| {
+        if (c >= surface.size.width) break;
+        const style = highlighter.styleAtByte(tokens, byte_offset + off, default_style);
+        surface.writeCell(c, row, .{
+            .char = .{ .grapheme = grapheme, .width = 1 },
+            .style = style,
+        });
+        c += 1;
+        off += grapheme.len;
     }
 }
 

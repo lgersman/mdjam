@@ -8,6 +8,7 @@ const block_runner = @import("../engine/block_runner.zig");
 const toc_mod = @import("toc_component.zig");
 const TocWidget = toc_mod.TocWidget;
 const state_store = @import("../engine/state_store.zig");
+const highlighter = @import("highlighter.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -464,7 +465,7 @@ pub const DocumentView = struct {
                     }
                 } else {
                     // Non-executable code block
-                    row = renderPlainCodeFence(surface, cf, row, width, t);
+                    row = try renderPlainCodeFence(arena, surface, cf, row, width, t);
                 }
             },
             .list => |l| {
@@ -512,14 +513,16 @@ pub const DocumentView = struct {
 };
 
 fn renderPlainCodeFence(
+    arena: Allocator,
     surface: vxfw.Surface,
     cf: *const md.CodeFence,
     start_row: u16,
     width: u16,
     t: *const theme.Theme,
-) u16 {
+) Allocator.Error!u16 {
     var row = start_row;
     const border_style: vaxis.Style = .{ .fg = t.unfocused_border };
+    const tokens = try highlighter.tokenize(arena, cf.body, cf.lang);
 
     // Top border: ┌─...─┐
     writePlainBoxTop(surface, row, width, border_style);
@@ -529,7 +532,8 @@ fn renderPlainCodeFence(
     while (lines.next()) |line| {
         if (row >= surface.size.height) break;
         surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
-        writeStr(surface, 2, row, line, .{ .fg = t.code_fg });
+        const line_start = @intFromPtr(line.ptr) - @intFromPtr(cf.body.ptr);
+        writeHighlightedStr(surface, 2, row, line, line_start, tokens, .{ .fg = t.code_fg });
         if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
         row += 1;
     }
@@ -921,6 +925,30 @@ fn countLines(text: []const u8) usize {
         if (c == '\n') count += 1;
     }
     return count;
+}
+
+fn writeHighlightedStr(
+    surface: vxfw.Surface,
+    col: u16,
+    row: u16,
+    s: []const u8,
+    byte_offset: usize,
+    tokens: []const highlighter.Token,
+    default_style: vaxis.Style,
+) void {
+    var c = col;
+    var off: usize = 0;
+    var it = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
+    while (it.nextCodepointSlice()) |grapheme| {
+        if (c >= surface.size.width) break;
+        const style = highlighter.styleAtByte(tokens, byte_offset + off, default_style);
+        surface.writeCell(c, row, .{
+            .char = .{ .grapheme = grapheme, .width = 1 },
+            .style = style,
+        });
+        c += 1;
+        off += grapheme.len;
+    }
 }
 
 fn writeStr(surface: vxfw.Surface, col: u16, row: u16, s: []const u8, style: vaxis.Style) void {

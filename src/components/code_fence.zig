@@ -26,6 +26,8 @@ pub const CodeFenceWidget = struct {
     runner: block_runner.Runner,
     runner_thread: ?std.Thread,
 
+    verbose: bool,
+
     // Redraw notification (set by callback, polled by app)
     needs_redraw: bool,
 
@@ -45,6 +47,7 @@ pub const CodeFenceWidget = struct {
         store: *state_store.StateStore,
         environ_map: *const std.process.Environ.Map,
         io: std.Io,
+        verbose: bool,
     ) Allocator.Error!CodeFenceWidget {
         return .{
             .allocator = allocator,
@@ -52,6 +55,7 @@ pub const CodeFenceWidget = struct {
             .store = store,
             .environ_map = environ_map,
             .io = io,
+            .verbose = verbose,
             .focused = false,
             .status = .idle,
             .output_lines = std.ArrayList(OutputLine).empty,
@@ -230,10 +234,9 @@ pub const CodeFenceWidget = struct {
         _ = width;
         var h: u16 = 0;
 
-        // Description line
-        if (self.block.metadata) |meta| {
-            if (meta.description != null) h += 1;
-        }
+        // Meta header inside box (description or full meta in verbose mode)
+        const ml = metaLineCount(self);
+        if (ml > 0) h += ml + 1; // meta lines + separator
 
         // Code lines
         var code_lines: u16 = 0;
@@ -264,19 +267,78 @@ pub const CodeFenceWidget = struct {
 
         var row: u16 = 0;
 
-        // Description
-        if (self.block.metadata) |meta| {
-            if (meta.description) |desc| {
-                const desc_style: vaxis.Style = .{ .fg = .{ .index = 8 }, .italic = true };
-                writeStr(surface, 2, row, "# ", desc_style);
-                writeStr(surface, 4, row, desc, desc_style);
-                row += 1;
-            }
-        }
-
         // Top border: ┌─...─┐
         writeBoxTop(surface, row, width, border_style);
         row += 1;
+
+        // Meta header inside box, followed by a separator
+        if (self.block.metadata) |meta| {
+            const meta_style: vaxis.Style = .{ .fg = .{ .rgb = .{ 0x5C, 0x63, 0x70 } }, .italic = true };
+            if (meta.description) |desc| {
+                surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                writeStr(surface, 2, row, "# ", meta_style);
+                writeStr(surface, 4, row, desc, meta_style);
+                if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                row += 1;
+            }
+            if (self.verbose) {
+                if (meta.id) |id| {
+                    surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                    writeStr(surface, 2, row, "# id: ", meta_style);
+                    writeStr(surface, 8, row, id, meta_style);
+                    if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                    row += 1;
+                }
+                if (meta.auto) {
+                    surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                    writeStr(surface, 2, row, "# auto: true", meta_style);
+                    if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                    row += 1;
+                }
+                if (meta.interactive) {
+                    surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                    writeStr(surface, 2, row, "# interactive: true", meta_style);
+                    if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                    row += 1;
+                }
+                if (meta.depends.len > 0) {
+                    surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                    writeStr(surface, 2, row, "# depends: ", meta_style);
+                    var col: u16 = 13;
+                    for (meta.depends, 0..) |dep, i| {
+                        if (i > 0) { writeStr(surface, col, row, ", ", meta_style); col += 2; }
+                        writeStr(surface, col, row, dep, meta_style);
+                        col += @intCast(dep.len);
+                    }
+                    if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                    row += 1;
+                }
+                if (meta.outputs.len > 0) {
+                    surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                    writeStr(surface, 2, row, "# outputs: ", meta_style);
+                    var col: u16 = 13;
+                    for (meta.outputs, 0..) |out, i| {
+                        if (i > 0) { writeStr(surface, col, row, ", ", meta_style); col += 2; }
+                        writeStr(surface, col, row, out, meta_style);
+                        col += @intCast(out.len);
+                    }
+                    if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                    row += 1;
+                }
+                var inp_it = meta.inputs.iterator();
+                while (inp_it.next()) |entry| {
+                    surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                    writeStr(surface, 2, row, "# input: ", meta_style);
+                    writeStr(surface, 11, row, entry.key_ptr.*, meta_style);
+                    if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
+                    row += 1;
+                }
+            }
+            if (metaLineCount(self) > 0) {
+                writeBoxSeparator(surface, row, width, border_style);
+                row += 1;
+            }
+        }
 
         // Code body with side borders
         var code_it = std.mem.splitScalar(u8, self.block.body, '\n');
@@ -315,6 +377,21 @@ pub const CodeFenceWidget = struct {
     }
 };
 
+
+fn metaLineCount(self: *const CodeFenceWidget) u16 {
+    const meta = self.block.metadata orelse return 0;
+    var n: u16 = 0;
+    if (meta.description != null) n += 1;
+    if (self.verbose) {
+        if (meta.id != null) n += 1;
+        if (meta.auto) n += 1;
+        if (meta.interactive) n += 1;
+        if (meta.depends.len > 0) n += 1;
+        if (meta.outputs.len > 0) n += 1;
+        n += @intCast(meta.inputs.count());
+    }
+    return n;
+}
 
 fn writeBoxTop(surface: vxfw.Surface, row: u16, width: u16, style: vaxis.Style) void {
     if (width == 0) return;

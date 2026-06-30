@@ -19,6 +19,7 @@ pub const DocumentView = struct {
     environ_map: *const std.process.Environ.Map,
     io: std.Io,
 
+    verbose: bool,
     scroll_offset: u32,
     focused_block: ?usize, // index into code_fences; null = no block focused
     code_fences: std.ArrayList(CodeFenceWidget),
@@ -36,6 +37,7 @@ pub const DocumentView = struct {
         store: *state_store.StateStore,
         environ_map: *const std.process.Environ.Map,
         io: std.Io,
+        verbose: bool,
     ) DocumentView {
         return .{
             .allocator = allocator,
@@ -43,6 +45,7 @@ pub const DocumentView = struct {
             .store = store,
             .environ_map = environ_map,
             .io = io,
+            .verbose = verbose,
             .scroll_offset = 0,
             .focused_block = null,
             .code_fences = std.ArrayList(CodeFenceWidget).empty,
@@ -93,6 +96,7 @@ pub const DocumentView = struct {
                                 self.store,
                                 self.environ_map,
                                 self.io,
+                                self.verbose,
                             );
                             // Propagate suspend/resume callbacks for interactive blocks
                             cfw.suspend_fn = self.suspend_fn;

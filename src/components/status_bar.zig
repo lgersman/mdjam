@@ -79,7 +79,7 @@ pub const StatusBar = struct {
         // Right side: only keys that have an effect in the current context
         const hints = switch (self.context) {
             .markdown => "j/k: scroll  g/G: top/bot  Tab: next block  q: quit",
-            .codeblock => "Enter: run  Tab/S-Tab: next/prev  Esc: deselect  q: quit",
+            .codeblock => "Enter: run  y: copy  Tab/S-Tab: next/prev  Esc: deselect  q: quit",
             .running => "Esc: cancel  q: quit",
         };
 

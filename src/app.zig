@@ -23,6 +23,7 @@ pub const App = struct {
     environ_map: *const std.process.Environ.Map,
     file_path: []const u8,
     vxfw_app: ?*vxfw.App,
+    verbose: bool,
 
     // Owned document state (reset on reload)
     doc_arena: std.heap.ArenaAllocator,
@@ -59,7 +60,6 @@ pub const App = struct {
         file_path: []const u8,
         opts: Options,
     ) Allocator.Error!*App {
-        _ = opts;
         const self = try allocator.create(App);
         errdefer allocator.destroy(self);
 
@@ -68,11 +68,12 @@ pub const App = struct {
         self.environ_map = environ_map;
         self.file_path = file_path;
         self.vxfw_app = null;
+        self.verbose = opts.verbose;
         self.doc_arena = std.heap.ArenaAllocator.init(allocator);
         self.document = null;
         self.fm = null;
         self.store = state_store.StateStore.init(allocator);
-        self.doc_view = DocumentView.init(allocator, &self.store, environ_map, io);
+        self.doc_view = DocumentView.init(allocator, &self.store, environ_map, io, opts.verbose);
         self.status_bar_widget = StatusBar.init();
         self.state_panel = .{ .store = &self.store, .visible = false };
         self.help_panel = .{ .visible = false };
@@ -269,6 +270,11 @@ pub const App = struct {
             .init => {
                 try self.loadFile();
                 self.syncStatusBar();
+                // Disable mouse tracking so the terminal can handle native text selection.
+                // The app is keyboard-only, so mouse events are not needed.
+                if (self.vxfw_app) |vxfw_a| {
+                    try vxfw_a.vx.setMouseMode(vxfw_a.tty.writer(), false);
+                }
                 if (self.anyFenceRunning()) {
                     try ctx.tick(80, self.widget());
                 }
@@ -315,6 +321,15 @@ pub const App = struct {
                     self.show_help = !self.show_help;
                     self.help_panel.visible = self.show_help;
                     ctx.redraw = true;
+                    return;
+                }
+                if (key.matches('y', .{})) {
+                    if (self.doc_view.focused_block) |fb| {
+                        const fence = &self.doc_view.code_fences.items[fb];
+                        if (self.vxfw_app) |vxfw_a| {
+                            try vxfw_a.vx.copyToSystemClipboard(vxfw_a.tty.writer(), fence.block.body, self.allocator);
+                        }
+                    }
                     return;
                 }
 

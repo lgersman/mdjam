@@ -234,12 +234,11 @@ pub const DocumentView = struct {
                     // Scroll to bottom - we'll just set a large value and clamp when drawing
                     self.scroll_offset = std.math.maxInt(u32);
                     ctx.consumeAndRedraw();
+                } else if (key.matches(vaxis.Key.tab, .{ .shift = true })) {
+                    self.focusPrevBlock();
+                    ctx.consumeAndRedraw();
                 } else if (key.matches(vaxis.Key.tab, .{})) {
-                    if (key.mods.shift) {
-                        self.focusPrevBlock();
-                    } else {
-                        self.focusNextBlock();
-                    }
+                    self.focusNextBlock();
                     ctx.consumeAndRedraw();
                 } else if (key.matches(vaxis.Key.enter, .{})) {
                     if (self.code_fences.items.len > 0) {

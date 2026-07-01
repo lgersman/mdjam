@@ -272,10 +272,6 @@ pub const App = struct {
             .init => {
                 try self.loadFile();
                 self.syncStatusBar();
-                // Disable mouse tracking so the terminal handles native text selection.
-                if (self.vxfw_app) |vxfw_a| {
-                    try vxfw_a.vx.setMouseMode(vxfw_a.tty.writer(), false);
-                }
                 if (self.anyFenceRunning()) {
                     try ctx.tick(80, self.widget());
                 }

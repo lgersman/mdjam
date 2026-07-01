@@ -5,8 +5,10 @@ const theme = @import("../theme.zig");
 
 const Allocator = std.mem.Allocator;
 
-const HELP_LINES = [_][]const u8{
-    " mdjam — Markdown Jam Runner ",
+const HELP_TITLE = " mdjam Help ";
+
+// Scrollable body (everything below the title).
+const HELP_BODY = [_][]const u8{
     "",
     " Navigation:",
     "   j / ↓       Scroll down",
@@ -22,18 +24,24 @@ const HELP_LINES = [_][]const u8{
     "   Esc          Cancel running block",
     "   j/k          Scroll output",
     "",
+    " Mouse:",
+    "   Click        Select a code block",
+    "   Shift+drag   Select text (terminal-native)",
+    "",
     " Panels:",
     "   ?            Toggle this help",
     "",
     " General:",
     "   r            Reload file",
-    "   Ctrl+C / q   Quit",
-    "",
-    "   Press ? to close",
+    "   Ctrl+C       Quit",
 };
+
+// Rows always reserved outside the scrollable body: top border, title, footer, bottom border.
+const CHROME_ROWS: u16 = 4;
 
 pub const HelpPanel = struct {
     visible: bool,
+    scroll: u16 = 0,
 
     pub fn widget(self: *HelpPanel) vxfw.Widget {
         return .{
@@ -47,13 +55,31 @@ pub const HelpPanel = struct {
         return self.draw(ctx);
     }
 
+    pub fn scrollDown(self: *HelpPanel, amount: u16) void {
+        self.scroll +|= amount;
+    }
+
+    pub fn scrollUp(self: *HelpPanel, amount: u16) void {
+        self.scroll -|= amount;
+    }
+
+    pub fn scrollToTop(self: *HelpPanel) void {
+        self.scroll = 0;
+    }
+
+    pub fn scrollToBottom(self: *HelpPanel) void {
+        self.scroll = std.math.maxInt(u16);
+    }
+
     pub fn draw(self: *HelpPanel, ctx: vxfw.DrawContext) Allocator.Error!vxfw.Surface {
         if (!self.visible) {
             return vxfw.Surface.init(ctx.arena, self.widget(), .{ .width = 0, .height = 0 });
         }
 
         const panel_width: u16 = 50;
-        const panel_height: u16 = @intCast(HELP_LINES.len + 2);
+        const desired_height: u16 = @intCast(HELP_BODY.len + CHROME_ROWS);
+        const avail_height: u16 = ctx.max.height orelse desired_height;
+        const panel_height: u16 = @min(desired_height, @max(avail_height, CHROME_ROWS));
         const size: vxfw.Size = .{ .width = panel_width, .height = panel_height };
         const surface = try vxfw.Surface.init(ctx.arena, self.widget(), size);
 
@@ -76,13 +102,21 @@ pub const HelpPanel = struct {
         // Box border
         drawBox(surface, 0, 0, panel_width, panel_height, border_fg, bg);
 
-        // Lines
-        var row: u16 = 1;
-        for (HELP_LINES) |line| {
-            if (row >= panel_height - 1) break;
-            const fg = if (row == 1)
-                title_fg
-            else if (line.len > 0 and line[line.len - 1] == ':')
+        // Title (fixed, row 1)
+        writeStr(surface, 2, 1, HELP_TITLE, .{ .fg = title_fg, .bg = bg });
+
+        // Scrollable body, rows [2, panel_height - 2)
+        const visible_rows: u16 = panel_height -| CHROME_ROWS;
+        const total_rows: u16 = @intCast(HELP_BODY.len);
+        const max_scroll: u16 = total_rows -| visible_rows;
+        if (self.scroll > max_scroll) self.scroll = max_scroll;
+
+        for (0..visible_rows) |i| {
+            const idx = self.scroll + @as(u16, @intCast(i));
+            if (idx >= total_rows) break;
+            const line = HELP_BODY[idx];
+            const row: u16 = 2 + @as(u16, @intCast(i));
+            const fg = if (line.len > 0 and line[line.len - 1] == ':')
                 title_fg
             else if (std.mem.startsWith(u8, line, "   "))
                 text_fg
@@ -90,7 +124,16 @@ pub const HelpPanel = struct {
                 dim_fg;
 
             writeStr(surface, 2, row, line, .{ .fg = fg, .bg = bg });
-            row += 1;
+        }
+
+        // Footer (fixed, second-to-last row)
+        if (panel_height >= CHROME_ROWS) {
+            const footer_row = panel_height - 2;
+            const footer: []const u8 = if (max_scroll > 0)
+                "j/k or ↑/↓ scroll   Esc close"
+            else
+                "Press Esc to close";
+            writeStr(surface, 2, footer_row, footer, .{ .fg = dim_fg, .bg = bg });
         }
 
         return surface;

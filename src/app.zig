@@ -280,20 +280,31 @@ pub const App = struct {
                 ctx.redraw = true;
             },
             .key_press => |key| {
-                // Dismiss help overlay on any key
+                // While the help overlay is visible, navigation keys scroll it,
+                // Esc closes it, and all other keys are ignored.
                 if (self.show_help) {
-                    self.show_help = false;
-                    self.help_panel.visible = false;
+                    if (key.matches(vaxis.Key.escape, .{})) {
+                        self.show_help = false;
+                        self.help_panel.visible = false;
+                    } else if (key.matches('j', .{}) or key.matches(vaxis.Key.down, .{})) {
+                        self.help_panel.scrollDown(1);
+                    } else if (key.matches('k', .{}) or key.matches(vaxis.Key.up, .{})) {
+                        self.help_panel.scrollUp(1);
+                    } else if (key.matches(' ', .{}) or key.matches(vaxis.Key.page_down, .{})) {
+                        self.help_panel.scrollDown(10);
+                    } else if (key.matches('b', .{}) or key.matches(vaxis.Key.page_up, .{})) {
+                        self.help_panel.scrollUp(10);
+                    } else if (key.matches('g', .{}) or key.matches(vaxis.Key.home, .{})) {
+                        self.help_panel.scrollToTop();
+                    } else if (key.matches('G', .{}) or key.matches(vaxis.Key.end, .{})) {
+                        self.help_panel.scrollToBottom();
+                    }
                     ctx.redraw = true;
                     return;
                 }
 
                 // Global keys
                 if (key.matches('c', .{ .ctrl = true })) {
-                    ctx.quit = true;
-                    return;
-                }
-                if (key.matches('q', .{})) {
                     ctx.quit = true;
                     return;
                 }
@@ -306,6 +317,7 @@ pub const App = struct {
                 if (key.matches('?', .{})) {
                     self.show_help = !self.show_help;
                     self.help_panel.visible = self.show_help;
+                    if (self.show_help) self.help_panel.scrollToTop();
                     ctx.redraw = true;
                     return;
                 }
@@ -385,9 +397,10 @@ pub const App = struct {
         // Help overlay (centered, on top)
         if (self.show_help) {
             const help_w: u16 = @min(50, width);
+            const help_h: u16 = @min(30, height);
             const help_ctx = ctx.withConstraints(
-                .{ .width = help_w, .height = 30 },
-                .{ .width = help_w, .height = 30 },
+                .{ .width = help_w, .height = 0 },
+                .{ .width = help_w, .height = help_h },
             );
             const help_surf = try self.help_panel.draw(help_ctx);
             const help_col: i17 = @intCast((width -| help_surf.size.width) / 2);

@@ -9,7 +9,6 @@ const prerequisites = @import("engine/prerequisites.zig");
 const lifecycle = @import("engine/lifecycle.zig");
 const DocumentView = @import("components/document_view.zig").DocumentView;
 const StatusBar = @import("components/status_bar.zig").StatusBar;
-const StatePanel = @import("components/state_panel.zig").StatePanel;
 const HelpPanel = @import("components/help_panel.zig").HelpPanel;
 const status_bar = @import("components/status_bar.zig");
 
@@ -36,11 +35,9 @@ pub const App = struct {
     // Components (reference self.store, so App must not be moved)
     doc_view: DocumentView,
     status_bar_widget: StatusBar,
-    state_panel: StatePanel,
     help_panel: HelpPanel,
 
     // UI state
-    show_state: bool,
     show_help: bool,
     terminal_width: u16,
     terminal_height: u16,
@@ -75,9 +72,7 @@ pub const App = struct {
         self.store = state_store.StateStore.init(allocator);
         self.doc_view = DocumentView.init(allocator, &self.store, environ_map, io, opts.verbose);
         self.status_bar_widget = StatusBar.init();
-        self.state_panel = .{ .store = &self.store, .visible = false };
         self.help_panel = .{ .visible = false };
-        self.show_state = false;
         self.show_help = false;
         self.terminal_width = 80;
         self.terminal_height = 24;
@@ -123,11 +118,11 @@ pub const App = struct {
     /// Load (or reload) the markdown file. Resets document state.
     pub fn loadFile(self: *App) !void {
         // Reset document state
-        _ = self.doc_arena.reset(.free_all);
         if (self.document) |*doc| {
             doc.deinit();
             self.document = null;
         }
+        _ = self.doc_arena.reset(.free_all);
         if (self.fm) |*fm| {
             fm.deinit(self.allocator);
             self.fm = null;
@@ -308,12 +303,6 @@ pub const App = struct {
                     ctx.redraw = true;
                     return;
                 }
-                if (key.matches('s', .{})) {
-                    self.show_state = !self.show_state;
-                    self.state_panel.visible = self.show_state;
-                    ctx.redraw = true;
-                    return;
-                }
                 if (key.matches('?', .{})) {
                     self.show_help = !self.show_help;
                     self.help_panel.visible = self.show_help;
@@ -363,8 +352,7 @@ pub const App = struct {
 
         // Reserve 1 row for status bar
         const doc_height: u16 = if (height > 1) height - 1 else height;
-        const state_panel_width: u16 = if (self.show_state) 40 else 0;
-        const doc_width: u16 = if (width > state_panel_width) width - state_panel_width else width;
+        const doc_width: u16 = width;
 
         // Document view (main content)
         {
@@ -377,20 +365,6 @@ pub const App = struct {
                 .origin = .{ .row = 0, .col = 0 },
                 .surface = doc_surf,
                 .z_index = 0,
-            });
-        }
-
-        // State panel (right side)
-        if (self.show_state and state_panel_width > 0) {
-            const panel_ctx = ctx.withConstraints(
-                .{ .width = state_panel_width, .height = doc_height },
-                .{ .width = state_panel_width, .height = doc_height },
-            );
-            const panel_surf = try self.state_panel.draw(panel_ctx);
-            try children.append(ctx.arena, .{
-                .origin = .{ .row = 0, .col = @intCast(doc_width) },
-                .surface = panel_surf,
-                .z_index = 1,
             });
         }
 

@@ -10,7 +10,7 @@ defaults:
 Blocks share data through a **state store**.
 Outputs from one block become `$MDJAM_*` environment variables available to all later blocks.
 
-Press **s** at any time to open the state panel and inspect current values.
+The blocks below read and print state store values as they run.
 
 ---
 
@@ -80,7 +80,7 @@ no `::set-output` needed.
 # ---
 export APP_NAME=myservice
 export APP_PORT=8080
-echo "Exported APP_NAME and APP_PORT — check the state panel (s)."
+echo "Exported APP_NAME and APP_PORT."
 ```
 
 ```bash

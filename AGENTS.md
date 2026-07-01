@@ -53,7 +53,6 @@ src/
     document_view.zig  Scrollable markdown document widget
     code_fence.zig     Executable code block widget
     status_bar.zig     Bottom keyboard-hint bar
-    state_panel.zig    Toggleable state store side panel
     help_panel.zig     Toggleable keyboard help overlay
 examples/          Sample .md files for manual testing
 ```

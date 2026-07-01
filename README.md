@@ -104,7 +104,6 @@ Watch mode is automatically disabled when reading from stdin.
 | `Enter` | Execute focused block |
 | `Esc` | Cancel running block |
 | `r` | Reload document |
-| `s` | Toggle state store panel |
 | `?` | Show / hide keyboard help |
 | `Ctrl+C` | Quit (runs teardown script if declared) |
 

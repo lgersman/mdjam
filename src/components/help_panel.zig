@@ -23,7 +23,6 @@ const HELP_LINES = [_][]const u8{
     "   j/k          Scroll output",
     "",
     " Panels:",
-    "   s            Toggle state store panel",
     "   ?            Toggle this help",
     "",
     " General:",

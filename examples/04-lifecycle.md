@@ -70,7 +70,10 @@ All blocks share `$MDJAM_WORK_DIR` — created once by setup, available everywhe
 #   - data_file
 # ---
 DATA="$MDJAM_WORK_DIR/response.json"
-curl -s "https://httpbin.org/get?hello=mdjam" -o "$DATA"
+if ! curl -fsS --retry 2 --max-time 10 "https://httpbingo.org/get?hello=mdjam" -o "$DATA"; then
+  echo "Failed to reach httpbingo.org — check your network connection" >&2
+  exit 1
+fi
 echo "::set-output name=data_file::$DATA"
 echo "Saved to: $DATA"
 wc -c < "$DATA"
@@ -83,7 +86,7 @@ wc -c < "$DATA"
 # depends:
 #   - fetch
 # ---
-echo "URL args received by httpbin:"
+echo "URL args received by httpbingo:"
 jq '.args' "$MDJAM_DATA_FILE"
 ```
 

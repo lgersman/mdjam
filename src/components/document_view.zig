@@ -227,7 +227,7 @@ pub const DocumentView = struct {
         const fb = self.focused_block orelse return;
         const cf = &self.code_fences.items[fb];
         if (cf.status != .running) {
-            try self.executeWithDeps(cf, false);
+            try self.executeWithDeps(cf, false, false);
         }
     }
 
@@ -240,13 +240,21 @@ pub const DocumentView = struct {
         return null;
     }
 
-    /// `auto`: true when this run was triggered by document-load auto-execution
-    /// rather than a manual Enter press; suppresses the "done" status badge
-    /// (see CodeFenceWidget.ran_automatically) and, below, keeps the whole
-    /// chain synchronous (safe: auto-execution happens before the TUI's first
-    /// draw, so blocking is invisible and preserves deterministic ordering
-    /// between auto blocks).
-    pub fn executeWithDeps(self: *DocumentView, target: *CodeFenceWidget, auto: bool) !void {
+    /// `auto`: true when this run was triggered by auto-execution rather than
+    /// a manual Enter press; suppresses the "done" status badge (see
+    /// CodeFenceWidget.ran_automatically).
+    ///
+    /// `wait_for_target`: whether to block until the target itself (last in
+    /// `order`) finishes, rather than just kicking it off. True only when
+    /// it's safe to freeze the event loop for the script's duration — e.g.
+    /// document-load auto-execution, which runs before the TUI's first draw
+    /// and needs deterministic ordering between chained auto blocks. Manual
+    /// runs and live auto-reruns (triggered by `checkAutoReruns` while the
+    /// TUI is already interactive) always pass false so the UI keeps
+    /// redrawing and showing the running/spinner status. Dependencies ahead
+    /// of the target in `order` are always waited on, regardless of this
+    /// flag, since later scripts may rely on state they write.
+    pub fn executeWithDeps(self: *DocumentView, target: *CodeFenceWidget, auto: bool, wait_for_target: bool) !void {
         // Collect dependency chain in execution order
         var order = std.ArrayList(*CodeFenceWidget).empty;
         defer order.deinit(self.allocator);
@@ -254,18 +262,17 @@ pub const DocumentView = struct {
         try self.collectDeps(target, &order, 0);
 
         for (order.items, 0..) |fence, i| {
-            if (fence.status == .done) continue; // already succeeded
+            const is_target = i == order.items.len - 1;
+            // A dependency that already succeeded is reused as-is, but the
+            // target itself must always (re-)run: callers only reach this
+            // point after deciding this block should execute now, and a
+            // block that already completed must still be re-runnable (e.g.
+            // via a repeated Enter press).
+            if (!is_target and fence.status == .done) continue;
             if (fence.status == .running) continue;
             fence.startExecution(auto) catch {};
 
-            // The target (last in `order`) is triggered manually from the UI's
-            // key handler; waiting here would freeze the whole event loop —
-            // no redraws — for the script's entire duration, hiding its
-            // running status/spinner. Dependencies must still complete before
-            // the next one starts, since later scripts may rely on state
-            // written by earlier ones, so only the target itself skips the wait.
-            const is_target = i == order.items.len - 1;
-            if (is_target and !auto) return;
+            if (is_target and !wait_for_target) return;
 
             // Wait synchronously for this dep to complete before proceeding
             var waited: usize = 0;
@@ -275,6 +282,52 @@ pub const DocumentView = struct {
                 _ = std.c.nanosleep(&ts, null);
             }
             if (fence.status != .done) return; // dep failed or timed out, stop chain
+        }
+    }
+
+    /// Compute a signature over everything an `auto` block's rerun decision
+    /// depends on: the run count of each block it `depends` on (bumped every
+    /// time that dependency finishes a run — see CodeFenceWidget.run_count)
+    /// and the resolved value of each of its own `inputs` ("parameters").
+    /// A changed signature means the block is due for another run.
+    fn autoSignature(self: *DocumentView, fence: *CodeFenceWidget) u64 {
+        var hasher = std.hash.Wyhash.init(0);
+        const meta = fence.block.metadata orelse return 0;
+
+        for (meta.depends) |dep_id| {
+            const dep = self.findFenceById(dep_id) orelse continue;
+            hasher.update(std.mem.asBytes(&dep.run_count));
+        }
+
+        var it = meta.inputs.iterator();
+        while (it.next()) |entry| {
+            hasher.update(entry.key_ptr.*);
+            fence.hashInputValue(&hasher, entry.key_ptr.*, entry.value_ptr.*);
+        }
+
+        return hasher.final();
+    }
+
+    /// Re-run every `auto` block whose `depends`/`inputs` signature has moved
+    /// since its last run (see `autoSignature`) — this also covers each
+    /// fence's very first run, since `last_auto_signature` starts out null.
+    /// Cheap to call often: it's a handful of hashes per fence, and only
+    /// fences that are actually due get executed.
+    ///
+    /// `wait_for_target`: forwarded to `executeWithDeps` — pass true only at
+    /// document load (before the TUI's first draw); false everywhere else so
+    /// live reruns don't freeze the UI.
+    pub fn checkAutoReruns(self: *DocumentView, wait_for_target: bool) void {
+        for (self.code_fences.items) |*cf| {
+            const meta = cf.block.metadata orelse continue;
+            if (!meta.auto or cf.status == .running) continue;
+
+            const sig = self.autoSignature(cf);
+            if (cf.last_auto_signature) |prev| {
+                if (prev == sig) continue;
+            }
+            cf.last_auto_signature = sig;
+            self.executeWithDeps(cf, true, wait_for_target) catch {};
         }
     }
 
@@ -360,7 +413,7 @@ pub const DocumentView = struct {
                     if (self.focused_block) |fb| {
                         const cf = &self.code_fences.items[fb];
                         if (cf.status != .running) {
-                            try self.executeWithDeps(cf, false);
+                            try self.executeWithDeps(cf, false, false);
                         }
                     }
                     ctx.consumeAndRedraw();

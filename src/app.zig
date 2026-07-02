@@ -315,14 +315,9 @@ pub const App = struct {
         }
         self.doc_view.frontmatter = if (self.fm) |*fm| fm else null;
 
-        // Auto-execute blocks with auto:true
-        for (self.doc_view.code_fences.items) |*cf| {
-            if (cf.block.metadata) |meta| {
-                if (meta.auto) {
-                    self.doc_view.executeWithDeps(cf, true) catch {};
-                }
-            }
-        }
+        // Auto-execute blocks with auto:true. Waits for the whole chain since
+        // this runs before the TUI's first draw (see executeWithDeps docs).
+        self.doc_view.checkAutoReruns(true);
 
         return .ok;
     }
@@ -375,6 +370,10 @@ pub const App = struct {
         switch (event) {
             .tick => {
                 self.status_bar_widget.update();
+                // Reruns any `auto` block whose depends/inputs changed since
+                // its last run — never blocks (wait_for_target: false), so
+                // this is safe to poll from the live event loop.
+                self.doc_view.checkAutoReruns(false);
                 if (self.anyFenceNeedsRedraw()) ctx.redraw = true;
                 if (self.anyFenceRunning()) {
                     try ctx.tick(80, self.widget());
@@ -431,6 +430,12 @@ pub const App = struct {
                 if (self.doc_view.isEditingInput()) {
                     try self.doc_view.handleEvent(ctx, event);
                     self.syncStatusBar();
+                    // Committing an input can change an `auto` block's
+                    // parameter signature; catch up right away.
+                    self.doc_view.checkAutoReruns(false);
+                    if (self.anyFenceRunning()) {
+                        try ctx.tick(80, self.widget());
+                    }
                     return;
                 }
 
@@ -465,6 +470,10 @@ pub const App = struct {
                 // Forward navigation and execution keys to document view
                 try self.doc_view.handleEvent(ctx, event);
                 self.syncStatusBar();
+                // A block may have just finished (e.g. a dependency an `auto`
+                // block watches) or started; catch up before deciding whether
+                // to keep polling.
+                self.doc_view.checkAutoReruns(false);
                 // If a block started running, start the polling tick
                 if (self.anyFenceRunning()) {
                     try ctx.tick(80, self.widget());
@@ -474,6 +483,7 @@ pub const App = struct {
                 try self.doc_view.handleEvent(ctx, .{ .app = ev });
                 _ = self.anyFenceNeedsRedraw();
                 ctx.redraw = true;
+                self.doc_view.checkAutoReruns(false);
                 // Keep polling if blocks are still running
                 if (self.anyFenceRunning()) {
                     try ctx.tick(80, self.widget());

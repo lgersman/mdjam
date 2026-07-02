@@ -26,6 +26,13 @@ pub const CodeFenceWidget = struct {
     // execution rather than a manual Enter press; the status bar hides the
     // "done" badge in that case since the user never asked to see the result.
     ran_automatically: bool,
+    // Bumped every time this block finishes a run (any outcome). Lets an
+    // `auto` block that `depends` on this one detect "it ran again" without
+    // needing to know which state-store keys it wrote.
+    run_count: u32,
+    // Signature (see DocumentView.autoSignature) this fence was last run
+    // with, if it's an `auto` block; null before its first run.
+    last_auto_signature: ?u64,
     output_lines: std.ArrayList(OutputLine),
     output_scroll: usize,
     runner: block_runner.Runner,
@@ -81,6 +88,8 @@ pub const CodeFenceWidget = struct {
             .focused = false,
             .status = .idle,
             .ran_automatically = false,
+            .run_count = 0,
+            .last_auto_signature = null,
             .output_lines = std.ArrayList(OutputLine).empty,
             .output_scroll = 0,
             .runner = block_runner.Runner.init(),
@@ -285,6 +294,23 @@ pub const CodeFenceWidget = struct {
         return def.default;
     }
 
+    /// Feed this input's currently-resolved value (store > local edit >
+    /// declared default — same precedence as `resolvedInputValueForDisplay`)
+    /// into `hasher`. Used by DocumentView.autoSignature to detect changed
+    /// parameters without needing to know that precedence itself.
+    pub fn hashInputValue(self: *const CodeFenceWidget, hasher: *std.hash.Wyhash, name: []const u8, def: fence_meta.InputDef) void {
+        if (self.store.getCopy(name, self.allocator) catch null) |v| {
+            defer self.allocator.free(v);
+            hasher.update(v);
+            return;
+        }
+        if (self.input_values.get(name)) |v| {
+            hasher.update(v);
+            return;
+        }
+        if (def.default) |v| hasher.update(v);
+    }
+
     fn setInputValue(self: *CodeFenceWidget, name: []const u8, value: []const u8) !void {
         const owned = try self.allocator.dupe(u8, value);
         errdefer self.allocator.free(owned);
@@ -403,6 +429,7 @@ pub const CodeFenceWidget = struct {
         const exec_ctx: *ExecCtx = @ptrCast(@alignCast(ctx.?));
         const self = exec_ctx.widget;
         self.status = result.status;
+        self.run_count += 1;
         if (result.status == .failed) {
             const msg = std.fmt.allocPrint(self.allocator, "(exited with code {d})", .{result.exit_code}) catch null;
             if (msg) |m| {

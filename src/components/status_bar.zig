@@ -77,11 +77,18 @@ pub const StatusBar = struct {
             if (shouldShowBadge(fence)) {
                 const status_text = statusText(self, fence.status);
                 const status_style = vaxis.Style{ .fg = statusFg(fence.status), .bg = bg, .bold = true };
-                writeStr(surface, 1, 0, "[", .{ .fg = .{ .index = 8 }, .bg = bg });
-                writeStr(surface, 2, 0, status_text, status_style);
-                const after_status: u16 = @intCast(2 + displayWidth(status_text));
-                writeStr(surface, after_status, 0, "]", .{ .fg = .{ .index = 8 }, .bg = bg });
-                left_len = after_status + 2;
+                if (fence.status == .running) {
+                    // The spinner is an animated glyph, not a text badge —
+                    // brackets around it just add visual noise.
+                    writeStr(surface, 1, 0, status_text, status_style);
+                    left_len = 1 + displayWidth(status_text) + 2;
+                } else {
+                    writeStr(surface, 1, 0, "[", .{ .fg = .{ .index = 8 }, .bg = bg });
+                    writeStr(surface, 2, 0, status_text, status_style);
+                    const after_status: u16 = @intCast(2 + displayWidth(status_text));
+                    writeStr(surface, after_status, 0, "]", .{ .fg = .{ .index = 8 }, .bg = bg });
+                    left_len = after_status + 2;
+                }
             }
         }
 

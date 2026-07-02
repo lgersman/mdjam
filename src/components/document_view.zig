@@ -22,6 +22,7 @@ pub const DocumentView = struct {
 
     verbose: bool,
     frontmatter: ?*const fm_mod.Frontmatter,
+    setup_error: ?[]const u8,
     scroll_offset: u32,
     focused_block: ?usize, // index into code_fences; null = no block focused
     code_fences: std.ArrayList(CodeFenceWidget),
@@ -49,6 +50,7 @@ pub const DocumentView = struct {
             .io = io,
             .verbose = verbose,
             .frontmatter = null,
+            .setup_error = null,
             .scroll_offset = 0,
             .focused_block = null,
             .code_fences = std.ArrayList(CodeFenceWidget).empty,
@@ -203,6 +205,14 @@ pub const DocumentView = struct {
         }
     }
 
+    /// True when the focused code fence has an input field actively being edited.
+    /// Callers should forward key events directly to it rather than applying
+    /// their own navigation/shortcut handling.
+    pub fn isEditingInput(self: *const DocumentView) bool {
+        const fb = self.focused_block orelse return false;
+        return self.code_fences.items[fb].isEditingInput();
+    }
+
     pub fn runFocusedBlock(self: *DocumentView) anyerror!void {
         const fb = self.focused_block orelse return;
         const cf = &self.code_fences.items[fb];
@@ -289,6 +299,12 @@ pub const DocumentView = struct {
                 ctx.redraw = true;
             },
             .key_press => |key| {
+                if (self.isEditingInput()) {
+                    // An input field owns the keyboard; forward everything to it
+                    // instead of applying our own navigation shortcuts.
+                    try self.code_fences.items[self.focused_block.?].handleEvent(ctx, event);
+                    return;
+                }
                 if (key.matches('j', .{}) or key.matches(vaxis.Key.down, .{})) {
                     self.scrollDown(3);
                     ctx.consumeAndRedraw();
@@ -426,12 +442,38 @@ pub const DocumentView = struct {
         return output_surface;
     }
 
+    fn setupErrorHeight(self: *const DocumentView) u16 {
+        const msg = self.setup_error orelse return 0;
+        var lines: u16 = 2; // opening banner + closing rule
+        var it = std.mem.splitScalar(u8, msg, '\n');
+        while (it.next()) |_| lines += 1;
+        return lines;
+    }
+
+    fn renderSetupError(self: *const DocumentView, surface: vxfw.Surface, start_row: u16, width: u16) u16 {
+        const msg = self.setup_error orelse return start_row;
+        var row = start_row;
+        const err_style: vaxis.Style = .{ .fg = .{ .rgb = .{ 0xE0, 0x6C, 0x75 } }, .bold = true };
+
+        writeBanner(surface, row, width, " Setup script failed ", err_style);
+        row += 1;
+        var it = std.mem.splitScalar(u8, msg, '\n');
+        while (it.next()) |line| {
+            writeStr(surface, 0, row, line, err_style);
+            row += 1;
+        }
+        writeFillRow(surface, row, width, "─", err_style);
+        row += 1;
+        return row;
+    }
+
     fn frontmatterHeaderHeight(self: *const DocumentView) u16 {
-        const fm = self.frontmatter orelse return 0;
+        const banner_h = self.setupErrorHeight();
+        const fm = self.frontmatter orelse return banner_h;
 
         if (!self.verbose) {
             // Non-verbose: description + separator
-            return if (fm.description != null) 2 else 0;
+            return banner_h + (if (fm.description != null) @as(u16, 2) else 0);
         }
 
         // Verbose: count YAML lines
@@ -443,18 +485,19 @@ pub const DocumentView = struct {
         if (has_tools or has_env) {
             h += 1; // "prerequisites:"
             if (has_tools) h += 1 + @as(u16, @intCast(fm.prerequisites.tools.len)); // "  tools:" + items
-            if (has_env) h += 1 + @as(u16, @intCast(fm.prerequisites.env.len));     // "  env:" + items
+            if (has_env) h += 1 + @as(u16, @intCast(fm.prerequisites.env.len)); // "  env:" + items
         }
         if (fm.defaults.count() > 0) {
             h += 1 + @as(u16, @intCast(fm.defaults.count())); // "defaults:" + items
         }
-        if (h == 0) return 0;
-        return h + 2; // opening banner + closing rule
+        if (h == 0) return banner_h;
+        return banner_h + h + 2; // opening banner + closing rule
     }
 
     fn renderFrontmatterHeader(self: *const DocumentView, surface: vxfw.Surface, start_row: u16, width: u16) u16 {
-        const fm = self.frontmatter orelse return start_row;
-        var row = start_row;
+        const err_row = self.renderSetupError(surface, start_row, width);
+        const fm = self.frontmatter orelse return err_row;
+        var row = err_row;
 
         const s: vaxis.Style = .{ .fg = .{ .index = 8 } };
 
@@ -473,7 +516,7 @@ pub const DocumentView = struct {
         const has_content = fm.title != null or fm.description != null or
             fm.prerequisites.tools.len > 0 or fm.prerequisites.env.len > 0 or
             fm.defaults.count() > 0;
-        if (!has_content) return start_row;
+        if (!has_content) return err_row;
 
         // Opening rule (no label)
         writeFillRow(surface, row, width, "─", s);
@@ -850,7 +893,10 @@ fn renderSpan(
             const code_style: vaxis.Style = .{ .fg = t.code_inline_fg };
             var it = std.unicode.Utf8Iterator{ .bytes = text, .i = 0 };
             while (it.nextCodepointSlice()) |grapheme| {
-                if (col >= width) { col = 0; row += 1; }
+                if (col >= width) {
+                    col = 0;
+                    row += 1;
+                }
                 if (row >= surface.size.height) break;
                 surface.writeCell(col, row, .{
                     .char = .{ .grapheme = grapheme, .width = 1 },
@@ -864,7 +910,10 @@ fn renderSpan(
             const link_style: vaxis.Style = .{ .fg = t.link_fg };
             var it = std.unicode.Utf8Iterator{ .bytes = link.text, .i = 0 };
             while (it.nextCodepointSlice()) |grapheme| {
-                if (col >= width) { col = 0; row += 1; }
+                if (col >= width) {
+                    col = 0;
+                    row += 1;
+                }
                 if (row >= surface.size.height) break;
                 surface.writeCell(col, row, .{
                     .char = .{ .grapheme = grapheme, .width = 1 },
@@ -900,7 +949,10 @@ fn renderSpanStyled(
 
     var it = std.unicode.Utf8Iterator{ .bytes = text, .i = 0 };
     while (it.nextCodepointSlice()) |grapheme| {
-        if (col >= width) { col = 0; row += 1; }
+        if (col >= width) {
+            col = 0;
+            row += 1;
+        }
         if (row >= surface.size.height) break;
         surface.writeCell(col, row, .{
             .char = .{ .grapheme = grapheme, .width = 1 },
@@ -1039,7 +1091,7 @@ fn renderTable(
                 const left_pad: u16 = switch (cell_align) {
                     .right => slack + 1,
                     .center => slack / 2 + 1,
-                    else => 1,  // left / none
+                    else => 1, // left / none
                 };
 
                 // Write " "×left_pad + content + " "×right_pad + " "

@@ -3,6 +3,7 @@ const vaxis = @import("vaxis");
 const vxfw = vaxis.vxfw;
 const theme = @import("../theme.zig");
 const md = @import("../parser/markdown.zig");
+const fence_meta = @import("../parser/fence_meta.zig");
 const block_runner = @import("../engine/block_runner.zig");
 const state_store = @import("../engine/state_store.zig");
 const highlighter = @import("highlighter.zig");
@@ -36,6 +37,23 @@ pub const CodeFenceWidget = struct {
     resume_fn: ?block_runner.ResumeFn,
     suspend_ctx: ?*anyopaque,
 
+    // Editable inputs: name of the input currently being edited (points into
+    // block.metadata's owned key strings), the text field backing that edit, and
+    // locally-entered values not yet committed to the shared state store.
+    editing_input: ?[]const u8,
+    input_field: vxfw.TextField,
+    input_values: std.StringHashMap([]u8),
+    // Heap-owned (not ctx.arena!) rendered text per input row, keyed by input name.
+    // vaxis's diff keeps a *reference* to the previous frame's cell content rather
+    // than copying it; ctx.arena resets to the same base address every frame, so a
+    // per-frame arena string here would alias its own prior frame's (now-stale)
+    // memory and fool the diff into never re-emitting the row. Caching on the heap
+    // and only replacing the pointer when the text actually changes avoids that.
+    input_line_cache: std.StringHashMap([]u8),
+    // Same reasoning, for the single input actively being edited (label + live text).
+    editing_label_cache: ?[]u8,
+    editing_field_cache: ?[]u8,
+
     pub const OutputLine = struct {
         text: []const u8,
         is_stderr: bool,
@@ -66,6 +84,12 @@ pub const CodeFenceWidget = struct {
             .suspend_fn = null,
             .resume_fn = null,
             .suspend_ctx = null,
+            .editing_input = null,
+            .input_field = vxfw.TextField.init(allocator),
+            .input_values = std.StringHashMap([]u8).init(allocator),
+            .input_line_cache = std.StringHashMap([]u8).init(allocator),
+            .editing_label_cache = null,
+            .editing_field_cache = null,
         };
     }
 
@@ -73,6 +97,24 @@ pub const CodeFenceWidget = struct {
         if (self.runner_thread) |t| t.detach();
         for (self.output_lines.items) |line| self.allocator.free(line.text);
         self.output_lines.deinit(self.allocator);
+        var val_it = self.input_values.valueIterator();
+        while (val_it.next()) |v| self.allocator.free(v.*);
+        self.input_values.deinit();
+        var cache_it = self.input_line_cache.valueIterator();
+        while (cache_it.next()) |v| self.allocator.free(v.*);
+        self.input_line_cache.deinit();
+        if (self.editing_label_cache) |v| self.allocator.free(v);
+        if (self.editing_field_cache) |v| self.allocator.free(v);
+        self.input_field.deinit();
+    }
+
+    /// Render (and cache) a string for a code-fence cell that vaxis's frame-to-frame
+    /// diffing will see. Must NOT be backed by ctx.arena (see input_line_cache doc).
+    fn cachedLine(self: *CodeFenceWidget, key: []const u8, comptime fmt: []const u8, args: anytype) []const u8 {
+        const fresh = std.fmt.allocPrint(self.allocator, fmt, args) catch return key;
+        if (self.input_line_cache.fetchRemove(key)) |kv| self.allocator.free(kv.value);
+        self.input_line_cache.put(key, fresh) catch {};
+        return fresh;
     }
 
     pub fn widget(self: *CodeFenceWidget) vxfw.Widget {
@@ -104,6 +146,10 @@ pub const CodeFenceWidget = struct {
                 ctx.redraw = true;
             },
             .key_press => |key| {
+                if (self.editing_input != null) {
+                    try self.handleInputEditKey(ctx, key);
+                    return;
+                }
                 if (key.matches(vaxis.Key.enter, .{})) {
                     if (self.status != .running) {
                         try self.startExecution();
@@ -112,6 +158,13 @@ pub const CodeFenceWidget = struct {
                 } else if (key.matches(vaxis.Key.escape, .{})) {
                     self.runner.cancel();
                     ctx.consumeAndRedraw();
+                } else if (key.matches('i', .{})) {
+                    if (self.status != .running) {
+                        if (self.firstEditableInput()) |name| {
+                            self.beginEditingInput(name);
+                            ctx.consumeAndRedraw();
+                        }
+                    }
                 } else if (key.matches('j', .{}) or key.matches(vaxis.Key.down, .{})) {
                     if (self.output_lines.items.len > 0) {
                         const max_scroll = self.output_lines.items.len -| 1;
@@ -144,7 +197,126 @@ pub const CodeFenceWidget = struct {
         }
     }
 
+    fn handleInputEditKey(self: *CodeFenceWidget, ctx: *vxfw.EventContext, key: vaxis.Key) anyerror!void {
+        const name = self.editing_input orelse return;
+        if (key.matches(vaxis.Key.escape, .{})) {
+            self.editing_input = null;
+            self.input_field.clearAndFree();
+            ctx.consumeAndRedraw();
+            return;
+        }
+        if (key.matches(vaxis.Key.enter, .{})) {
+            const value = try self.input_field.toOwnedSlice();
+            defer self.allocator.free(value);
+            try self.setInputValue(name, value);
+            self.editing_input = null;
+            if (self.firstEditableInput()) |next_name| {
+                self.beginEditingInput(next_name);
+            }
+            ctx.consumeAndRedraw();
+            return;
+        }
+        try self.input_field.handleEvent(ctx, .{ .key_press = key });
+    }
+
+    /// Returns the name of the first non-readonly input that doesn't yet have a
+    /// value in the shared state store (i.e. lacks an upstream source).
+    pub fn firstEditableInput(self: *const CodeFenceWidget) ?[]const u8 {
+        const meta = self.block.metadata orelse return null;
+        if (meta.inputs.count() == 0) return null;
+
+        var names_buf: [16][]const u8 = undefined;
+        var n: usize = 0;
+        var it = meta.inputs.iterator();
+        while (it.next()) |entry| {
+            if (n >= names_buf.len) break;
+            names_buf[n] = entry.key_ptr.*;
+            n += 1;
+        }
+        std.mem.sort([]const u8, names_buf[0..n], {}, lessThanStr);
+
+        for (names_buf[0..n]) |name| {
+            const def = meta.inputs.get(name).?;
+            if (def.readonly) continue;
+            if (!self.needsEdit(name)) continue;
+            return name;
+        }
+        return null;
+    }
+
+    pub fn hasEditableInputs(self: *const CodeFenceWidget) bool {
+        return self.firstEditableInput() != null;
+    }
+
+    pub fn isEditingInput(self: *const CodeFenceWidget) bool {
+        return self.editing_input != null;
+    }
+
+    /// True while this input has neither an upstream/store value nor a locally
+    /// entered (but not-yet-committed) value — i.e. it still needs the user's input.
+    fn needsEdit(self: *const CodeFenceWidget, name: []const u8) bool {
+        return !self.storeHasValue(name) and !self.input_values.contains(name);
+    }
+
+    fn storeHasValue(self: *const CodeFenceWidget, name: []const u8) bool {
+        const copy = self.store.getCopy(name, self.allocator) catch return false;
+        if (copy) |c| {
+            self.allocator.free(c);
+            return true;
+        }
+        return false;
+    }
+
+    /// Resolved value for display: store (upstream/committed) > local edit > declared default.
+    /// `arena` should be a per-frame arena so the store copy doesn't need manual freeing.
+    fn resolvedInputValueForDisplay(
+        self: *const CodeFenceWidget,
+        arena: Allocator,
+        name: []const u8,
+        def: fence_meta.InputDef,
+    ) ?[]const u8 {
+        if (self.store.getCopy(name, arena) catch null) |v| return v;
+        if (self.input_values.get(name)) |v| return v;
+        return def.default;
+    }
+
+    fn setInputValue(self: *CodeFenceWidget, name: []const u8, value: []const u8) !void {
+        const owned = try self.allocator.dupe(u8, value);
+        errdefer self.allocator.free(owned);
+        if (self.input_values.fetchRemove(name)) |kv| self.allocator.free(kv.value);
+        try self.input_values.put(name, owned);
+    }
+
+    fn beginEditingInput(self: *CodeFenceWidget, name: []const u8) void {
+        self.editing_input = name;
+        self.input_field.clearAndFree();
+        self.input_field.style = .{ .reverse = true };
+        const meta = self.block.metadata orelse return;
+        const def = meta.inputs.get(name) orelse return;
+        const prefill = self.input_values.get(name) orelse def.default;
+        if (prefill) |p| {
+            self.input_field.insertSliceAtCursor(p) catch {};
+        }
+    }
+
+    /// Resolve any non-readonly inputs that still lack a store value (local edit,
+    /// else declared default, else empty) and commit them to the shared state
+    /// store so they're available as MDJAM_* env vars for this and later blocks.
+    fn resolveInputsBeforeExecution(self: *CodeFenceWidget) void {
+        const meta = self.block.metadata orelse return;
+        var it = meta.inputs.iterator();
+        while (it.next()) |entry| {
+            const name = entry.key_ptr.*;
+            const def = entry.value_ptr.*;
+            if (def.readonly) continue;
+            if (self.storeHasValue(name)) continue;
+            const value = self.input_values.get(name) orelse def.default orelse "";
+            self.store.set(name, value, if (meta.id) |id| id else null) catch {};
+        }
+    }
+
     pub fn startExecution(self: *CodeFenceWidget) !void {
+        self.resolveInputsBeforeExecution();
         // Clear previous output
         for (self.output_lines.items) |line| self.allocator.free(line.text);
         self.output_lines.clearRetainingCapacity();
@@ -225,6 +397,14 @@ pub const CodeFenceWidget = struct {
         const exec_ctx: *ExecCtx = @ptrCast(@alignCast(ctx.?));
         const self = exec_ctx.widget;
         self.status = result.status;
+        if (result.status == .failed) {
+            const msg = std.fmt.allocPrint(self.allocator, "(exited with code {d})", .{result.exit_code}) catch null;
+            if (msg) |m| {
+                self.output_lines.append(self.allocator, .{ .text = m, .is_stderr = true }) catch {
+                    self.allocator.free(m);
+                };
+            }
+        }
         self.needs_redraw = true;
         // ctx_ptr is destroyed here; allocator is still valid because App owns it
         exec_ctx.widget.allocator.destroy(exec_ctx);
@@ -306,7 +486,10 @@ pub const CodeFenceWidget = struct {
                     writeStr(surface, 2, row, "# depends: ", meta_style);
                     var col: u16 = 13;
                     for (meta.depends, 0..) |dep, i| {
-                        if (i > 0) { writeStr(surface, col, row, ", ", meta_style); col += 2; }
+                        if (i > 0) {
+                            writeStr(surface, col, row, ", ", meta_style);
+                            col += 2;
+                        }
                         writeStr(surface, col, row, dep, meta_style);
                         col += @intCast(dep.len);
                     }
@@ -318,18 +501,75 @@ pub const CodeFenceWidget = struct {
                     writeStr(surface, 2, row, "# outputs: ", meta_style);
                     var col: u16 = 13;
                     for (meta.outputs, 0..) |out, i| {
-                        if (i > 0) { writeStr(surface, col, row, ", ", meta_style); col += 2; }
+                        if (i > 0) {
+                            writeStr(surface, col, row, ", ", meta_style);
+                            col += 2;
+                        }
                         writeStr(surface, col, row, out, meta_style);
                         col += @intCast(out.len);
                     }
                     if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
                     row += 1;
                 }
-                var inp_it = meta.inputs.iterator();
-                while (inp_it.next()) |entry| {
+            }
+
+            // Inputs: always shown (not just verbose) since they're interactive.
+            if (meta.inputs.count() > 0) {
+                var names_buf: [16][]const u8 = undefined;
+                var n: usize = 0;
+                var name_it = meta.inputs.iterator();
+                while (name_it.next()) |entry| {
+                    if (n >= names_buf.len) break;
+                    names_buf[n] = entry.key_ptr.*;
+                    n += 1;
+                }
+                std.mem.sort([]const u8, names_buf[0..n], {}, lessThanStr);
+
+                for (names_buf[0..n]) |name| {
+                    const def = meta.inputs.get(name).?;
                     surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
-                    writeStr(surface, 2, row, "# input: ", meta_style);
-                    writeStr(surface, 11, row, entry.key_ptr.*, meta_style);
+
+                    if (self.editing_input != null and std.mem.eql(u8, self.editing_input.?, name)) {
+                        if (self.editing_label_cache) |v| self.allocator.free(v);
+                        self.editing_label_cache = std.fmt.allocPrint(self.allocator, "# {s}: ", .{name}) catch null;
+                        const label = self.editing_label_cache orelse "# input: ";
+                        writeStr(surface, 2, row, label, meta_style);
+                        const field_col: u16 = 2 + @as(u16, @intCast(label.len));
+                        if (width > field_col + 1) {
+                            const field_width = width - field_col - 1;
+                            // Render the field's current text ourselves (heap-cached) rather
+                            // than blitting TextField.draw()'s surface, which is backed by
+                            // ctx.arena and would hit the same stale-diff issue as above.
+                            if (self.editing_field_cache) |v| self.allocator.free(v);
+                            self.editing_field_cache = std.fmt.allocPrint(self.allocator, "{s}{s}", .{
+                                self.input_field.buf.firstHalf(),
+                                self.input_field.buf.secondHalf(),
+                            }) catch null;
+                            const field_text = self.editing_field_cache orelse "";
+                            const field_style: vaxis.Style = .{ .reverse = true };
+                            var col: u16 = 0;
+                            var it = std.unicode.Utf8Iterator{ .bytes = field_text, .i = 0 };
+                            while (it.nextCodepointSlice()) |g| {
+                                if (col >= field_width) break;
+                                surface.writeCell(field_col + col, row, .{ .char = .{ .grapheme = g, .width = 1 }, .style = field_style });
+                                col += 1;
+                            }
+                            while (col < field_width) : (col += 1) {
+                                surface.writeCell(field_col + col, row, .{ .char = .{ .grapheme = " ", .width = 1 }, .style = field_style });
+                            }
+                        }
+                    } else {
+                        const value = self.resolvedInputValueForDisplay(ctx.arena, name, def);
+                        const hint: []const u8 = if (def.readonly)
+                            " (readonly)"
+                        else if (self.needsEdit(name))
+                            " [i: edit]"
+                        else
+                            "";
+                        const line = self.cachedLine(name, "# {s}: {s}{s}", .{ name, value orelse "", hint });
+                        writeStr(surface, 2, row, line, meta_style);
+                    }
+
                     if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
                     row += 1;
                 }
@@ -377,6 +617,9 @@ pub const CodeFenceWidget = struct {
     }
 };
 
+fn lessThanStr(_: void, a: []const u8, b: []const u8) bool {
+    return std.mem.order(u8, a, b) == .lt;
+}
 
 fn metaLineCount(self: *const CodeFenceWidget) u16 {
     const meta = self.block.metadata orelse return 0;
@@ -388,8 +631,9 @@ fn metaLineCount(self: *const CodeFenceWidget) u16 {
         if (meta.interactive) n += 1;
         if (meta.depends.len > 0) n += 1;
         if (meta.outputs.len > 0) n += 1;
-        n += @intCast(meta.inputs.count());
     }
+    // Inputs are always shown (not just in verbose mode) since they're interactive.
+    n += @intCast(meta.inputs.count());
     return n;
 }
 
@@ -462,4 +706,3 @@ fn writeStr(surface: vxfw.Surface, col: u16, row: u16, s: []const u8, style: vax
         c += 1;
     }
 }
-

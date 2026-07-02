@@ -8,9 +8,10 @@ const block_runner = @import("../engine/block_runner.zig");
 const Allocator = std.mem.Allocator;
 
 pub const Context = enum {
-    markdown,    // no block focused — show scroll/nav hints
-    codeblock,   // a code block is focused
-    running,     // a block is actively executing
+    markdown, // no block focused — show scroll/nav hints
+    codeblock, // a code block is focused
+    running, // a block is actively executing
+    editing_input, // an input field is being edited
 };
 
 pub const StatusBar = struct {
@@ -23,16 +24,12 @@ pub const StatusBar = struct {
 
     pub fn setFocusedFence(self: *StatusBar, fence: ?*CodeFenceWidget) void {
         self.focused_fence = fence;
-        if (fence) |f| {
-            self.context = if (f.status == .running) .running else .codeblock;
-        } else {
-            self.context = .markdown;
-        }
+        self.context = contextFor(fence);
     }
 
     pub fn update(self: *StatusBar) void {
         if (self.focused_fence) |f| {
-            self.context = if (f.status == .running) .running else .codeblock;
+            self.context = contextFor(f);
         }
     }
 
@@ -77,10 +74,15 @@ pub const StatusBar = struct {
         }
 
         // Right side: only keys that have an effect in the current context
-        const hints = switch (self.context) {
+        const has_inputs = if (self.focused_fence) |f| f.hasEditableInputs() else false;
+        const hints: []const u8 = switch (self.context) {
             .markdown => "j/k: scroll  g/G: top/bot  Tab: next block",
-            .codeblock => "Enter: run  y: copy  Tab/S-Tab: next/prev  Esc: deselect",
+            .codeblock => if (has_inputs)
+                "Enter: run  i: edit input  y: copy  Tab/S-Tab: next/prev  Esc: deselect"
+            else
+                "Enter: run  y: copy  Tab/S-Tab: next/prev  Esc: deselect",
             .running => "Esc: cancel",
+            .editing_input => "Enter: save  Esc: cancel",
         };
 
         // Truncate right side to fit after left side
@@ -106,6 +108,13 @@ pub const StatusBar = struct {
         return surface;
     }
 };
+
+fn contextFor(fence: ?*CodeFenceWidget) Context {
+    const f = fence orelse return .markdown;
+    if (f.isEditingInput()) return .editing_input;
+    if (f.status == .running) return .running;
+    return .codeblock;
+}
 
 fn statusText(status: block_runner.RunStatus) []const u8 {
     return switch (status) {

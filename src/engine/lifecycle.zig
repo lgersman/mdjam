@@ -19,26 +19,37 @@ pub const RunResult = struct {
     }
 };
 
+/// Details about a failed setup script, surfaced to the caller for display.
+pub const SetupFailure = struct {
+    exit_code: u8,
+    /// Owned by the caller; must be freed with `allocator.free`.
+    stderr: []u8,
+};
+
 /// Run a lifecycle script (setup or teardown).
 /// For setup: outputs (KEY=value export lines) are written to the state store.
 /// For teardown: all state store values are injected as MDJAM_* env vars.
+///
+/// Returns a `SetupFailure` (owning its `stderr`) when the script exits non-zero,
+/// so the caller can surface the failure prominently instead of just logging it.
 pub fn runSetup(
     allocator: Allocator,
     io: std.Io,
     script: []const u8,
     store: *state_store.StateStore,
     environ_map: *const std.process.Environ.Map,
-) LifecycleError!void {
-    const result = try runScript(allocator, io, script, environ_map, store);
-    defer {
-        var r = result;
-        r.deinit(allocator);
-    }
+) LifecycleError!?SetupFailure {
+    var result = try runScript(allocator, io, script, environ_map, store);
 
-    if (result.exit_code != 0) return error.RunFailed;
+    if (result.exit_code != 0) {
+        allocator.free(result.stdout);
+        return SetupFailure{ .exit_code = result.exit_code, .stderr = result.stderr };
+    }
+    defer result.deinit(allocator);
 
     // Parse exports from stdout. Format: "KEY=value" lines (from `export -p` or simple assignments)
     parseExports(allocator, store, result.stdout, null);
+    return null;
 }
 
 pub fn runTeardown(

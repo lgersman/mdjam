@@ -28,6 +28,7 @@ pub const App = struct {
     doc_arena: std.heap.ArenaAllocator,
     document: ?md.Document,
     fm: ?frontmatter.Frontmatter,
+    setup_error: ?[]const u8,
 
     // State store (long-lived, survives reloads)
     store: state_store.StateStore,
@@ -69,6 +70,7 @@ pub const App = struct {
         self.doc_arena = std.heap.ArenaAllocator.init(allocator);
         self.document = null;
         self.fm = null;
+        self.setup_error = null;
         self.store = state_store.StateStore.init(allocator);
         self.doc_view = DocumentView.init(allocator, &self.store, environ_map, io, opts.verbose);
         self.status_bar_widget = StatusBar.init();
@@ -107,12 +109,23 @@ pub const App = struct {
     }
 
     pub fn destroy(self: *App) void {
+        self.runTeardown();
         self.doc_view.deinit();
         if (self.document) |*doc| doc.deinit();
         if (self.fm) |*fm| fm.deinit(self.allocator);
+        if (self.setup_error) |msg| self.allocator.free(msg);
         self.doc_arena.deinit();
         self.store.deinit();
         self.allocator.destroy(self);
+    }
+
+    /// Run the document's teardown script (if declared), on normal quit.
+    fn runTeardown(self: *App) void {
+        const fm = self.fm orelse return;
+        const script = fm.teardown orelse return;
+        lifecycle.runTeardown(self.allocator, self.io, script, &self.store, self.environ_map) catch |err| {
+            std.log.warn("Teardown script failed: {}", .{err});
+        };
     }
 
     /// Load (or reload) the markdown file. Resets document state.
@@ -127,7 +140,12 @@ pub const App = struct {
             fm.deinit(self.allocator);
             self.fm = null;
         }
+        if (self.setup_error) |msg| {
+            self.allocator.free(msg);
+            self.setup_error = null;
+        }
         self.doc_view.frontmatter = null;
+        self.doc_view.setup_error = null;
 
         // Read file using std.Io.Dir.cwd()
         const source = std.Io.Dir.cwd().readFileAlloc(
@@ -178,15 +196,30 @@ pub const App = struct {
         if (!prereq_failed) {
             if (self.fm) |fm| {
                 if (fm.setup) |setup_script| {
-                    lifecycle.runSetup(
+                    const failure = lifecycle.runSetup(
                         self.allocator,
                         self.io,
                         setup_script,
                         &self.store,
                         self.environ_map,
-                    ) catch |err| {
-                        std.log.warn("Setup script failed: {}", .{err});
+                    ) catch |err| blk: {
+                        std.log.warn("Setup script failed to run: {}", .{err});
+                        break :blk null;
                     };
+                    if (failure) |f| {
+                        defer self.allocator.free(f.stderr);
+                        const stderr_trimmed = std.mem.trim(u8, f.stderr, " \t\r\n");
+                        self.setup_error = std.fmt.allocPrint(
+                            self.allocator,
+                            "Setup script failed (exit code {d}){s}{s}",
+                            .{
+                                f.exit_code,
+                                if (stderr_trimmed.len > 0) ":\n" else "",
+                                stderr_trimmed,
+                            },
+                        ) catch null;
+                        self.doc_view.setup_error = self.setup_error;
+                    }
                 }
             }
         }
@@ -300,6 +333,14 @@ pub const App = struct {
                         self.help_panel.scrollToBottom();
                     }
                     ctx.redraw = true;
+                    return;
+                }
+
+                // While editing an input field, it owns the keyboard entirely —
+                // bypass global keys (reload, help, copy, quit) and navigation.
+                if (self.doc_view.isEditingInput()) {
+                    try self.doc_view.handleEvent(ctx, event);
+                    self.syncStatusBar();
                     return;
                 }
 

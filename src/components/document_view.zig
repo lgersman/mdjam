@@ -25,6 +25,9 @@ pub const DocumentView = struct {
     setup_error: ?[]const u8,
     scroll_offset: u32,
     focused_block: ?usize, // index into code_fences; null = no block focused
+    // Set when Tab/Shift-Tab is pressed at the last/first block; shown once in
+    // the status bar in place of the usual key hints, then cleared on the next key.
+    boundary_hint: ?[]const u8,
     code_fences: std.ArrayList(CodeFenceWidget),
     toc_widgets: std.ArrayList(TocWidget),
     terminal_width: u16,
@@ -53,6 +56,7 @@ pub const DocumentView = struct {
             .setup_error = null,
             .scroll_offset = 0,
             .focused_block = null,
+            .boundary_hint = null,
             .code_fences = std.ArrayList(CodeFenceWidget).empty,
             .toc_widgets = std.ArrayList(TocWidget).empty,
             .terminal_width = 80,
@@ -125,7 +129,10 @@ pub const DocumentView = struct {
     pub fn focusNextBlock(self: *DocumentView) void {
         if (self.code_fences.items.len == 0) return;
         if (self.focused_block) |fb| {
-            if (fb + 1 >= self.code_fences.items.len) return; // already at last
+            if (fb + 1 >= self.code_fences.items.len) {
+                self.boundary_hint = "Already at the last block";
+                return;
+            }
             self.code_fences.items[fb].focused = false;
             self.focused_block = fb + 1;
         } else {
@@ -139,7 +146,10 @@ pub const DocumentView = struct {
     pub fn focusPrevBlock(self: *DocumentView) void {
         if (self.code_fences.items.len == 0) return;
         if (self.focused_block) |fb| {
-            if (fb == 0) return; // already at first
+            if (fb == 0) {
+                self.boundary_hint = "Already at the first block";
+                return;
+            }
             self.code_fences.items[fb].focused = false;
             self.focused_block = fb - 1;
         } else {
@@ -217,7 +227,7 @@ pub const DocumentView = struct {
         const fb = self.focused_block orelse return;
         const cf = &self.code_fences.items[fb];
         if (cf.status != .running) {
-            try self.executeWithDeps(cf);
+            try self.executeWithDeps(cf, false);
         }
     }
 
@@ -230,17 +240,33 @@ pub const DocumentView = struct {
         return null;
     }
 
-    pub fn executeWithDeps(self: *DocumentView, target: *CodeFenceWidget) !void {
+    /// `auto`: true when this run was triggered by document-load auto-execution
+    /// rather than a manual Enter press; suppresses the "done" status badge
+    /// (see CodeFenceWidget.ran_automatically) and, below, keeps the whole
+    /// chain synchronous (safe: auto-execution happens before the TUI's first
+    /// draw, so blocking is invisible and preserves deterministic ordering
+    /// between auto blocks).
+    pub fn executeWithDeps(self: *DocumentView, target: *CodeFenceWidget, auto: bool) !void {
         // Collect dependency chain in execution order
         var order = std.ArrayList(*CodeFenceWidget).empty;
         defer order.deinit(self.allocator);
 
         try self.collectDeps(target, &order, 0);
 
-        for (order.items) |fence| {
+        for (order.items, 0..) |fence, i| {
             if (fence.status == .done) continue; // already succeeded
             if (fence.status == .running) continue;
-            fence.startExecution() catch {};
+            fence.startExecution(auto) catch {};
+
+            // The target (last in `order`) is triggered manually from the UI's
+            // key handler; waiting here would freeze the whole event loop —
+            // no redraws — for the script's entire duration, hiding its
+            // running status/spinner. Dependencies must still complete before
+            // the next one starts, since later scripts may rely on state
+            // written by earlier ones, so only the target itself skips the wait.
+            const is_target = i == order.items.len - 1;
+            if (is_target and !auto) return;
+
             // Wait synchronously for this dep to complete before proceeding
             var waited: usize = 0;
             while (fence.status == .running and waited < 30000) : (waited += 1) {
@@ -299,6 +325,7 @@ pub const DocumentView = struct {
                 ctx.redraw = true;
             },
             .key_press => |key| {
+                self.boundary_hint = null;
                 if (self.isEditingInput()) {
                     // An input field owns the keyboard; forward everything to it
                     // instead of applying our own navigation shortcuts.
@@ -333,7 +360,7 @@ pub const DocumentView = struct {
                     if (self.focused_block) |fb| {
                         const cf = &self.code_fences.items[fb];
                         if (cf.status != .running) {
-                            try self.executeWithDeps(cf);
+                            try self.executeWithDeps(cf, false);
                         }
                     }
                     ctx.consumeAndRedraw();

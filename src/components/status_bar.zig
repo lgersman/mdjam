@@ -14,12 +14,20 @@ pub const Context = enum {
     editing_input, // an input field is being edited
 };
 
+// Braille-dot spinner frames for the "running" badge, advanced once per tick
+// (~80ms while a block is executing — see App's tick handler).
+const SPINNER_FRAMES = [_][]const u8{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
+
 pub const StatusBar = struct {
     focused_fence: ?*CodeFenceWidget,
     context: Context,
+    // One-shot message shown in place of the key hints (e.g. "Already at the
+    // last block"); set by DocumentView.boundary_hint, cleared on the next key.
+    boundary_hint: ?[]const u8,
+    spinner_frame: u8,
 
     pub fn init() StatusBar {
-        return .{ .focused_fence = null, .context = .markdown };
+        return .{ .focused_fence = null, .context = .markdown, .boundary_hint = null, .spinner_frame = 0 };
     }
 
     pub fn setFocusedFence(self: *StatusBar, fence: ?*CodeFenceWidget) void {
@@ -31,6 +39,7 @@ pub const StatusBar = struct {
         if (self.focused_fence) |f| {
             self.context = contextFor(f);
         }
+        self.spinner_frame +%= 1;
     }
 
     pub fn widget(self: *StatusBar) vxfw.Widget {
@@ -61,21 +70,25 @@ pub const StatusBar = struct {
             });
         }
 
-        // Left side: status badge when a block is focused
+        // Left side: status badge when a block is focused and there's something
+        // worth reporting (idle and auto-run "done" results are hidden).
         var left_len: u16 = 0;
         if (self.focused_fence) |fence| {
-            const status_text = statusText(fence.status);
-            const status_style = vaxis.Style{ .fg = statusFg(fence.status), .bg = bg, .bold = true };
-            writeStr(surface, 1, 0, "[", .{ .fg = .{ .index = 8 }, .bg = bg });
-            writeStr(surface, 2, 0, status_text, status_style);
-            const after_status: u16 = @intCast(2 + status_text.len);
-            writeStr(surface, after_status, 0, "]", .{ .fg = .{ .index = 8 }, .bg = bg });
-            left_len = after_status + 2;
+            if (shouldShowBadge(fence)) {
+                const status_text = statusText(self, fence.status);
+                const status_style = vaxis.Style{ .fg = statusFg(fence.status), .bg = bg, .bold = true };
+                writeStr(surface, 1, 0, "[", .{ .fg = .{ .index = 8 }, .bg = bg });
+                writeStr(surface, 2, 0, status_text, status_style);
+                const after_status: u16 = @intCast(2 + displayWidth(status_text));
+                writeStr(surface, after_status, 0, "]", .{ .fg = .{ .index = 8 }, .bg = bg });
+                left_len = after_status + 2;
+            }
         }
 
-        // Right side: only keys that have an effect in the current context
+        // Right side: a one-shot boundary message takes priority over the usual
+        // key hints; otherwise show only keys that have an effect in this context
         const has_inputs = if (self.focused_fence) |f| f.hasEditableInputs() else false;
-        const hints: []const u8 = switch (self.context) {
+        const hints: []const u8 = self.boundary_hint orelse switch (self.context) {
             .markdown => "j/k: scroll  g/G: top/bot  Tab: next block",
             .codeblock => if (has_inputs)
                 "Enter: run  i: edit input  y: copy  Tab/S-Tab: next/prev  Esc: deselect"
@@ -84,6 +97,10 @@ pub const StatusBar = struct {
             .running => "Esc: cancel",
             .editing_input => "Enter: save  Esc: cancel",
         };
+        const hints_style: vaxis.Style = if (self.boundary_hint != null)
+            .{ .fg = .{ .rgb = .{ 0xE5, 0xC0, 0x7B } }, .bg = bg, .italic = true }
+        else
+            .{ .fg = fg, .bg = bg };
 
         // Truncate right side to fit after left side
         const hints_len: u16 = @intCast(hints.len);
@@ -93,7 +110,7 @@ pub const StatusBar = struct {
         if (right_start < width) {
             const available = width - right_start;
             const truncated = hints[0..@min(hints.len, available)];
-            writeStr(surface, right_start, 0, truncated, .{ .fg = fg, .bg = bg });
+            writeStr(surface, right_start, 0, truncated, hints_style);
         }
 
         // Separator dot between left and right (only when both are visible)
@@ -116,15 +133,33 @@ fn contextFor(fence: ?*CodeFenceWidget) Context {
     return .codeblock;
 }
 
-fn statusText(status: block_runner.RunStatus) []const u8 {
+/// Idle blocks have nothing to report; auto-run blocks that merely succeeded
+/// don't need to announce "done" since the user never asked to run them.
+fn shouldShowBadge(fence: *CodeFenceWidget) bool {
+    if (fence.status == .idle) return false;
+    if (fence.status == .done and fence.ran_automatically) return false;
+    return true;
+}
+
+fn statusText(self: *const StatusBar, status: block_runner.RunStatus) []const u8 {
     return switch (status) {
         .idle => "idle",
-        .running => "running…",
+        .running => SPINNER_FRAMES[self.spinner_frame % SPINNER_FRAMES.len],
         .done => "done",
         .failed => "failed",
         .cancelled => "cancelled",
         .blocked => "blocked",
     };
+}
+
+/// Column width of a string when rendered one grapheme per cell (matches
+/// writeStr's cadence below) — byte length overcounts multi-byte glyphs
+/// like the braille spinner frames.
+fn displayWidth(s: []const u8) u16 {
+    var n: u16 = 0;
+    var it = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
+    while (it.nextCodepointSlice()) |_| n += 1;
+    return n;
 }
 
 fn statusFg(status: block_runner.RunStatus) vaxis.Color {

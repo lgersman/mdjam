@@ -107,6 +107,23 @@ echo "::set-output name=summary_file::$SUMMARY"
 
 ---
 
+## Watch it run
+
+Press **Enter** on the block below and look at the status bar: while a script
+is executing, its badge cycles through a spinning braille animation
+(`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`) instead of showing a static label.
+
+```bash
+# ---
+# description: Sleeps for a few seconds so you can watch the spinner
+# ---
+echo "Starting a slow task..."
+sleep 5
+echo "Done!"
+```
+
+---
+
 ## Teardown
 
 When you press **Ctrl+C** to quit, mdjam runs the `teardown` script before exiting.

@@ -22,6 +22,10 @@ pub const CodeFenceWidget = struct {
     // State
     focused: bool,
     status: block_runner.RunStatus,
+    // True when the current/last run was triggered by document-load auto
+    // execution rather than a manual Enter press; the status bar hides the
+    // "done" badge in that case since the user never asked to see the result.
+    ran_automatically: bool,
     output_lines: std.ArrayList(OutputLine),
     output_scroll: usize,
     runner: block_runner.Runner,
@@ -76,6 +80,7 @@ pub const CodeFenceWidget = struct {
             .verbose = verbose,
             .focused = false,
             .status = .idle,
+            .ran_automatically = false,
             .output_lines = std.ArrayList(OutputLine).empty,
             .output_scroll = 0,
             .runner = block_runner.Runner.init(),
@@ -152,7 +157,7 @@ pub const CodeFenceWidget = struct {
                 }
                 if (key.matches(vaxis.Key.enter, .{})) {
                     if (self.status != .running) {
-                        try self.startExecution();
+                        try self.startExecution(false);
                     }
                     ctx.consumeAndRedraw();
                 } else if (key.matches(vaxis.Key.escape, .{})) {
@@ -315,7 +320,8 @@ pub const CodeFenceWidget = struct {
         }
     }
 
-    pub fn startExecution(self: *CodeFenceWidget) !void {
+    pub fn startExecution(self: *CodeFenceWidget, is_auto: bool) !void {
+        self.ran_automatically = is_auto;
         self.resolveInputsBeforeExecution();
         // Clear previous output
         for (self.output_lines.items) |line| self.allocator.free(line.text);

@@ -208,10 +208,13 @@ Values written by a block with `id: my-block` are stored under both the bare key
 
 ### Block status indicators
 
+The status bar shows a `[indicator]` badge for the focused block, except for
+`idle` (nothing has happened yet) and `done` results from `auto: true`
+execution (the user never asked to see them) — both are shown as no badge at all.
+
 | Indicator | Meaning |
 |---|---|
-| `idle` | Never run |
-| `running...` | Script is executing |
+| spinner (`⠋⠙⠹⠸...`) | Script is running |
 | `done` | Succeeded |
 | `failed` | Exited non-zero |
 | `cancelled` | Cancelled with `Esc` |

@@ -319,7 +319,7 @@ pub const App = struct {
         for (self.doc_view.code_fences.items) |*cf| {
             if (cf.block.metadata) |meta| {
                 if (meta.auto) {
-                    self.doc_view.executeWithDeps(cf) catch {};
+                    self.doc_view.executeWithDeps(cf, true) catch {};
                 }
             }
         }
@@ -351,6 +351,7 @@ pub const App = struct {
         else
             null;
         self.status_bar_widget.setFocusedFence(focused);
+        self.status_bar_widget.boundary_hint = self.doc_view.boundary_hint;
     }
 
     fn anyFenceRunning(self: *App) bool {

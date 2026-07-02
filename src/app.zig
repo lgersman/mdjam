@@ -29,6 +29,16 @@ pub const App = struct {
     document: ?md.Document,
     fm: ?frontmatter.Frontmatter,
     setup_error: ?[]const u8,
+    initial_load_done: bool,
+
+    // Process exit code, set when setup/teardown exits non-zero. Propagated
+    // as mdjam's own exit code once the process quits normally.
+    exit_code: u8,
+    // Setup/teardown stdout+stderr, buffered here because they run while the
+    // TUI owns the terminal (setup) or must be flushed to the real terminal
+    // after it's torn down (teardown) — printed once in destroy().
+    post_run_stdout: std.ArrayList(u8),
+    post_run_stderr: std.ArrayList(u8),
 
     // State store (long-lived, survives reloads)
     store: state_store.StateStore,
@@ -71,6 +81,10 @@ pub const App = struct {
         self.document = null;
         self.fm = null;
         self.setup_error = null;
+        self.initial_load_done = false;
+        self.exit_code = 0;
+        self.post_run_stdout = std.ArrayList(u8).empty;
+        self.post_run_stderr = std.ArrayList(u8).empty;
         self.store = state_store.StateStore.init(allocator);
         self.doc_view = DocumentView.init(allocator, &self.store, environ_map, io, opts.verbose);
         self.status_bar_widget = StatusBar.init();
@@ -108,28 +122,84 @@ pub const App = struct {
         }
     }
 
-    pub fn destroy(self: *App) void {
+    /// Tear down the app. Runs the teardown script (if declared), flushes any
+    /// buffered setup/teardown output to the real terminal (the caller must
+    /// ensure the TUI has already released the terminal by this point), and
+    /// returns the process exit code that should be propagated (0 if setup
+    /// and teardown both succeeded or weren't declared).
+    pub fn destroy(self: *App) u8 {
         self.runTeardown();
+        self.flushPostRunOutput();
+        const code = self.exit_code;
+
         self.doc_view.deinit();
         if (self.document) |*doc| doc.deinit();
         if (self.fm) |*fm| fm.deinit(self.allocator);
         if (self.setup_error) |msg| self.allocator.free(msg);
+        self.post_run_stdout.deinit(self.allocator);
+        self.post_run_stderr.deinit(self.allocator);
         self.doc_arena.deinit();
         self.store.deinit();
         self.allocator.destroy(self);
+        return code;
     }
 
     /// Run the document's teardown script (if declared), on normal quit.
     fn runTeardown(self: *App) void {
         const fm = self.fm orelse return;
         const script = fm.teardown orelse return;
-        lifecycle.runTeardown(self.allocator, self.io, script, &self.store, self.environ_map) catch |err| {
-            std.log.warn("Teardown script failed: {}", .{err});
+        // Nothing was ever set up (e.g. we aborted on a failed prerequisite
+        // before the document ever loaded) — there's nothing to tear down.
+        if (self.document == null) return;
+        var result = lifecycle.runTeardown(self.allocator, self.io, script, &self.store, self.environ_map) catch |err| {
+            std.log.warn("Teardown script failed to run: {}", .{err});
+            self.exit_code = 1;
+            return;
         };
+        defer result.deinit(self.allocator);
+        self.recordScriptOutput("teardown", result);
+        if (result.exit_code != 0) self.exit_code = result.exit_code;
     }
 
+    /// Buffer a lifecycle script's output for later display: stdout only when
+    /// verbose (it's not error output, just informational), stderr always.
+    fn recordScriptOutput(self: *App, label: []const u8, result: lifecycle.RunResult) void {
+        if (self.verbose and result.stdout.len > 0) {
+            appendLabeled(self.allocator, &self.post_run_stdout, label, "stdout", result.stdout);
+        }
+        if (result.stderr.len > 0) {
+            appendLabeled(self.allocator, &self.post_run_stderr, label, "stderr", result.stderr);
+        }
+    }
+
+    /// Print buffered setup/teardown output to the real terminal. Must only
+    /// be called after the TUI has released the terminal (alt-screen exited).
+    fn flushPostRunOutput(self: *App) void {
+        if (self.post_run_stdout.items.len > 0) {
+            std.Io.File.writeStreamingAll(std.Io.File.stdout(), self.io, self.post_run_stdout.items) catch {};
+        }
+        if (self.post_run_stderr.items.len > 0) {
+            std.Io.File.writeStreamingAll(std.Io.File.stderr(), self.io, self.post_run_stderr.items) catch {};
+        }
+    }
+
+    /// Outcome of an initial (fail-fast) load, used by main() to decide
+    /// whether it's safe to start the TUI.
+    pub const LoadOutcome = union(enum) {
+        ok,
+        /// Owned by the caller; must be freed with `allocator.free`.
+        prereq_failed: []const u8,
+    };
+
     /// Load (or reload) the markdown file. Resets document state.
-    pub fn loadFile(self: *App) !void {
+    ///
+    /// `fail_fast_prereqs`: when true (the initial load, before the TUI has
+    /// started), a failed prerequisite check aborts the load entirely and
+    /// returns `.prereq_failed` instead of blocking fences, so the caller can
+    /// print the reason and exit without ever starting the TUI. When false
+    /// (reload via `r`), prerequisite failures keep the existing softer
+    /// behavior of blocking fences so the rest of the document stays usable.
+    pub fn loadFile(self: *App, fail_fast_prereqs: bool) !LoadOutcome {
         // Reset document state
         if (self.document) |*doc| {
             doc.deinit();
@@ -155,7 +225,7 @@ pub const App = struct {
             std.Io.Limit.limited(10 * 1024 * 1024),
         ) catch |err| {
             std.log.err("Failed to read '{s}': {}", .{ self.file_path, err });
-            return;
+            return .ok;
         };
         defer self.allocator.free(source);
 
@@ -183,6 +253,12 @@ pub const App = struct {
                 self.environ_map,
             ) catch &.{};
             if (failed.len > 0) {
+                if (fail_fast_prereqs) {
+                    const msg = prerequisites.formatFailures(self.allocator, self.file_path, failed) catch
+                        try self.allocator.dupe(u8, "mdjam: prerequisites not met\n");
+                    prerequisites.freeChecks(self.allocator, failed);
+                    return .{ .prereq_failed = msg };
+                }
                 prereq_failed = true;
                 // Block all fences when prerequisites fail
                 for (self.doc_view.code_fences.items) |*cf| {
@@ -196,7 +272,7 @@ pub const App = struct {
         if (!prereq_failed) {
             if (self.fm) |fm| {
                 if (fm.setup) |setup_script| {
-                    const failure = lifecycle.runSetup(
+                    var result = lifecycle.runSetup(
                         self.allocator,
                         self.io,
                         setup_script,
@@ -204,21 +280,26 @@ pub const App = struct {
                         self.environ_map,
                     ) catch |err| blk: {
                         std.log.warn("Setup script failed to run: {}", .{err});
+                        self.exit_code = 1;
                         break :blk null;
                     };
-                    if (failure) |f| {
-                        defer self.allocator.free(f.stderr);
-                        const stderr_trimmed = std.mem.trim(u8, f.stderr, " \t\r\n");
-                        self.setup_error = std.fmt.allocPrint(
-                            self.allocator,
-                            "Setup script failed (exit code {d}){s}{s}",
-                            .{
-                                f.exit_code,
-                                if (stderr_trimmed.len > 0) ":\n" else "",
-                                stderr_trimmed,
-                            },
-                        ) catch null;
-                        self.doc_view.setup_error = self.setup_error;
+                    if (result) |*r| {
+                        defer r.deinit(self.allocator);
+                        self.recordScriptOutput("setup", r.*);
+                        if (r.exit_code != 0) {
+                            self.exit_code = r.exit_code;
+                            const stderr_trimmed = std.mem.trim(u8, r.stderr, " \t\r\n");
+                            self.setup_error = std.fmt.allocPrint(
+                                self.allocator,
+                                "Setup script failed (exit code {d}){s}{s}",
+                                .{
+                                    r.exit_code,
+                                    if (stderr_trimmed.len > 0) ":\n" else "",
+                                    stderr_trimmed,
+                                },
+                            ) catch null;
+                            self.doc_view.setup_error = self.setup_error;
+                        }
                     }
                 }
             }
@@ -242,6 +323,8 @@ pub const App = struct {
                 }
             }
         }
+
+        return .ok;
     }
 
     pub fn widget(self: *App) vxfw.Widget {
@@ -298,7 +381,13 @@ pub const App = struct {
                 }
             },
             .init => {
-                try self.loadFile();
+                // Normally the initial (fail-fast) load already happened in
+                // main() before the TUI started; this is a fallback for
+                // standalone use of App without that preflight check.
+                if (!self.initial_load_done) {
+                    _ = try self.loadFile(false);
+                    self.initial_load_done = true;
+                }
                 self.syncStatusBar();
                 if (self.anyFenceRunning()) {
                     try ctx.tick(80, self.widget());
@@ -350,7 +439,7 @@ pub const App = struct {
                     return;
                 }
                 if (key.matches('r', .{})) {
-                    try self.loadFile();
+                    _ = try self.loadFile(false);
                     self.syncStatusBar();
                     ctx.redraw = true;
                     return;
@@ -465,3 +554,15 @@ pub const App = struct {
         };
     }
 };
+
+/// Append a labeled block of script output (e.g. "== setup stdout ==") to a
+/// buffer. Errors are swallowed — this is best-effort diagnostic output.
+fn appendLabeled(allocator: Allocator, buf: *std.ArrayList(u8), script: []const u8, stream: []const u8, data: []const u8) void {
+    const header = std.fmt.allocPrint(allocator, "== {s} {s} ==\n", .{ script, stream }) catch return;
+    defer allocator.free(header);
+    buf.appendSlice(allocator, header) catch return;
+    buf.appendSlice(allocator, data) catch return;
+    if (data.len == 0 or data[data.len - 1] != '\n') {
+        buf.append(allocator, '\n') catch {};
+    }
+}

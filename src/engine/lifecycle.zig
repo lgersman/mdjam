@@ -8,6 +8,9 @@ const Allocator = std.mem.Allocator;
 
 pub const LifecycleError = Allocator.Error || std.process.SpawnError || error{RunFailed};
 
+/// Result of running a lifecycle script. Always populated (regardless of exit
+/// status) so the caller can decide what to do with stdout/stderr — e.g. show
+/// it to the user (gated by verbosity) and/or propagate the exit code.
 pub const RunResult = struct {
     exit_code: u8,
     stdout: []u8,
@@ -19,53 +22,34 @@ pub const RunResult = struct {
     }
 };
 
-/// Details about a failed setup script, surfaced to the caller for display.
-pub const SetupFailure = struct {
-    exit_code: u8,
-    /// Owned by the caller; must be freed with `allocator.free`.
-    stderr: []u8,
-};
-
-/// Run a lifecycle script (setup or teardown).
-/// For setup: outputs (KEY=value export lines) are written to the state store.
-/// For teardown: all state store values are injected as MDJAM_* env vars.
-///
-/// Returns a `SetupFailure` (owning its `stderr`) when the script exits non-zero,
-/// so the caller can surface the failure prominently instead of just logging it.
+/// Run the `setup` script. On success (exit code 0), `::set-output`/export
+/// lines in stdout are written to the state store. Always returns the full
+/// result (including on failure) so the caller can surface output/exit code.
 pub fn runSetup(
     allocator: Allocator,
     io: std.Io,
     script: []const u8,
     store: *state_store.StateStore,
     environ_map: *const std.process.Environ.Map,
-) LifecycleError!?SetupFailure {
-    var result = try runScript(allocator, io, script, environ_map, store);
-
-    if (result.exit_code != 0) {
-        allocator.free(result.stdout);
-        return SetupFailure{ .exit_code = result.exit_code, .stderr = result.stderr };
+) LifecycleError!RunResult {
+    const result = try runScript(allocator, io, script, environ_map, store);
+    if (result.exit_code == 0) {
+        // Parse exports from stdout. Format: "KEY=value" lines (from `export -p` or simple assignments)
+        parseExports(allocator, store, result.stdout, null);
     }
-    defer result.deinit(allocator);
-
-    // Parse exports from stdout. Format: "KEY=value" lines (from `export -p` or simple assignments)
-    parseExports(allocator, store, result.stdout, null);
-    return null;
+    return result;
 }
 
+/// Run the `teardown` script. Always returns the full result so the caller
+/// can surface output/exit code.
 pub fn runTeardown(
     allocator: Allocator,
     io: std.Io,
     script: []const u8,
     store: *state_store.StateStore,
     environ_map: *const std.process.Environ.Map,
-) LifecycleError!void {
-    const result = try runScript(allocator, io, script, environ_map, store);
-    defer {
-        var r = result;
-        r.deinit(allocator);
-    }
-
-    if (result.exit_code != 0) return error.RunFailed;
+) LifecycleError!RunResult {
+    return runScript(allocator, io, script, environ_map, store);
 }
 
 fn runScript(

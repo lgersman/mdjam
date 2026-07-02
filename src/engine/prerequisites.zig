@@ -73,3 +73,34 @@ pub fn freeChecks(allocator: Allocator, checks: []const FailedCheck) void {
     for (checks) |ch| allocator.free(@constCast(ch.name));
     allocator.free(checks);
 }
+
+/// Format a human-readable, multi-line explanation of failed prerequisite
+/// checks for a given file, suitable for printing to stderr. Caller owns the
+/// returned slice.
+pub fn formatFailures(
+    allocator: Allocator,
+    file_path: []const u8,
+    failed: []const FailedCheck,
+) Allocator.Error![]u8 {
+    var buf = std.ArrayList(u8).empty;
+    errdefer buf.deinit(allocator);
+
+    const header = try std.fmt.allocPrint(
+        allocator,
+        "mdjam: prerequisites not met for '{s}':\n",
+        .{file_path},
+    );
+    defer allocator.free(header);
+    try buf.appendSlice(allocator, header);
+
+    for (failed) |f| {
+        const line = try std.fmt.allocPrint(allocator, "  - missing {s}: {s}\n", .{
+            if (f.kind == .tool) "tool" else "env var",
+            f.name,
+        });
+        defer allocator.free(line);
+        try buf.appendSlice(allocator, line);
+    }
+
+    return buf.toOwnedSlice(allocator);
+}

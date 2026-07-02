@@ -54,15 +54,40 @@ pub fn main(init: std.process.Init) !void {
         .no_watch = no_watch,
         .verbose = verbose,
     });
-    defer app.destroy();
 
-    var vxfw_app = try vxfw.App.init(io, gpa, init.environ_map, &tty_buf);
-    defer vxfw_app.deinit();
+    // Preflight: check prerequisites before ever touching the terminal. A
+    // failure here prints why and exits immediately, instead of launching
+    // the TUI with locked blocks.
+    const outcome = app.loadFile(true) catch |err| {
+        _ = app.destroy();
+        return err;
+    };
+    switch (outcome) {
+        .prereq_failed => |msg| {
+            defer gpa.free(msg);
+            try std.Io.File.writeStreamingAll(std.Io.File.stderr(), io, msg);
+            _ = app.destroy();
+            std.process.exit(1);
+        },
+        .ok => {},
+    }
+    app.initial_load_done = true;
+
+    var vxfw_app = vxfw.App.init(io, gpa, init.environ_map, &tty_buf) catch |err| {
+        _ = app.destroy();
+        return err;
+    };
 
     // Wire up suspend/resume callbacks for interactive blocks
     app.setVxfwApp(&vxfw_app);
 
-    try vxfw_app.run(app.widget(), .{});
+    const run_result = vxfw_app.run(app.widget(), .{});
+    vxfw_app.deinit();
+    // destroy() runs the teardown script and flushes any buffered setup/teardown
+    // output to the real terminal — only safe now that the TUI has released it.
+    const exit_code = app.destroy();
+    try run_result;
+    if (exit_code != 0) std.process.exit(exit_code);
 }
 
 const help_text =

@@ -94,15 +94,11 @@ pub const StatusBar = struct {
 
         // Right side: a one-shot boundary message takes priority over the usual
         // key hints; otherwise show only keys that have an effect in this context
-        const has_inputs = if (self.focused_fence) |f| f.hasEditableInputs() else false;
         const hints: []const u8 = self.boundary_hint orelse switch (self.context) {
             .markdown => "j/k: scroll  g/G: top/bot  Tab: next block",
-            .codeblock => if (has_inputs)
-                "Enter: run  i: edit input  y: copy  Tab/S-Tab: next/prev  Esc: deselect"
-            else
-                "Enter: run  y: copy  Tab/S-Tab: next/prev  Esc: deselect",
+            .codeblock => "Enter: run  y: copy  Tab/S-Tab: next/prev  Esc: deselect",
             .running => "Esc: cancel",
-            .editing_input => "Enter: save  Esc: cancel",
+            .editing_input => "Enter: run  Tab/S-Tab: next/prev param  Esc: cancel",
         };
         const hints_style: vaxis.Style = if (self.boundary_hint != null)
             .{ .fg = .{ .rgb = .{ 0xE5, 0xC0, 0x7B } }, .bg = bg, .italic = true }

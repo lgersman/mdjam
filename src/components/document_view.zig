@@ -13,6 +13,12 @@ const fm_mod = @import("../parser/frontmatter.zig");
 
 const Allocator = std.mem.Allocator;
 
+const PendingCursor = struct {
+    vrow: u32,
+    col: u16,
+    shape: vaxis.Cell.CursorShape,
+};
+
 pub const DocumentView = struct {
     allocator: Allocator,
     document: ?*const md.Document,
@@ -28,6 +34,13 @@ pub const DocumentView = struct {
     // Set when Tab/Shift-Tab is pressed at the last/first block; shown once in
     // the status bar in place of the usual key hints, then cleared on the next key.
     boundary_hint: ?[]const u8,
+    // Terminal-cursor position for the actively-edited param, in document
+    // (virtual, pre-scroll) coordinates. Set by renderBlock() while drawing
+    // the focused code fence's surface, since that surface's cells are
+    // blitted into ours rather than nested as a vxfw child (which would
+    // otherwise propagate `Surface.cursor` automatically). Consumed by
+    // draw() after scroll-clipping to place it on the returned surface.
+    pending_cursor: ?PendingCursor,
     code_fences: std.ArrayList(CodeFenceWidget),
     toc_widgets: std.ArrayList(TocWidget),
     terminal_width: u16,
@@ -57,6 +70,7 @@ pub const DocumentView = struct {
             .scroll_offset = 0,
             .focused_block = null,
             .boundary_hint = null,
+            .pending_cursor = null,
             .code_fences = std.ArrayList(CodeFenceWidget).empty,
             .toc_widgets = std.ArrayList(TocWidget).empty,
             .terminal_width = 80,
@@ -119,11 +133,10 @@ pub const DocumentView = struct {
             }
         }
 
-        // Focus first code fence
-        if (self.code_fences.items.len > 0) {
-            self.focused_block = 0;
-            self.code_fences.items[0].focused = true;
-        }
+        // Nothing is focused on load — the document renders from the top in
+        // plain reading mode (scroll_offset/focused_block were just reset
+        // above). The first Tab press focuses (and auto-edits, if it has
+        // params) the first block; Shift-Tab starts from the last.
     }
 
     pub fn focusNextBlock(self: *DocumentView) void {
@@ -140,6 +153,9 @@ pub const DocumentView = struct {
         }
         const new_fb = self.focused_block.?;
         self.code_fences.items[new_fb].focused = true;
+        if (self.code_fences.items[new_fb].firstEditableInput()) |name| {
+            self.code_fences.items[new_fb].beginEditingInput(name);
+        }
         self.scrollToFence(new_fb);
     }
 
@@ -157,7 +173,70 @@ pub const DocumentView = struct {
         }
         const new_fb = self.focused_block.?;
         self.code_fences.items[new_fb].focused = true;
+        // Arriving backwards lands on the last param, not the first, so
+        // Shift-Tab traverses the document in a consistent reverse order.
+        if (self.code_fences.items[new_fb].lastEditableInput()) |name| {
+            self.code_fences.items[new_fb].beginEditingInput(name);
+        }
         self.scrollToFence(new_fb);
+    }
+
+    /// Tab while editing a param: advance to the next editable param in this
+    /// block, or hand off to the next block if there isn't one. Boundary
+    /// (last param of the last block) is checked before anything is
+    /// committed/cleared, so the field's contents and edit state are left
+    /// untouched — same "stop with hint" behavior as plain block navigation.
+    pub fn paramOrBlockNext(self: *DocumentView) void {
+        const fb = self.focused_block orelse return;
+        const cf = &self.code_fences.items[fb];
+        const cur = cf.editing_input orelse return;
+        if (cf.nextEditableInput(cur)) |next_name| {
+            cf.commitCurrentField();
+            cf.beginEditingInput(next_name);
+            return;
+        }
+        if (fb + 1 >= self.code_fences.items.len) {
+            self.boundary_hint = "Already at the last block";
+            return;
+        }
+        cf.commitCurrentField();
+        cf.stopEditing();
+        self.focusNextBlock();
+    }
+
+    /// Shift-Tab mirror of `paramOrBlockNext`.
+    pub fn paramOrBlockPrev(self: *DocumentView) void {
+        const fb = self.focused_block orelse return;
+        const cf = &self.code_fences.items[fb];
+        const cur = cf.editing_input orelse return;
+        if (cf.prevEditableInput(cur)) |prev_name| {
+            cf.commitCurrentField();
+            cf.beginEditingInput(prev_name);
+            return;
+        }
+        if (fb == 0) {
+            self.boundary_hint = "Already at the first block";
+            return;
+        }
+        cf.commitCurrentField();
+        cf.stopEditing();
+        self.focusPrevBlock();
+    }
+
+    /// Enter while editing a param: commit it, resolve any other unset
+    /// inputs in the block to their defaults (via `executeWithDeps` ->
+    /// `startExecution` -> `resolveInputsBeforeExecution`), and run — without
+    /// moving focus. The param editor stays open on the same field (refreshed
+    /// with the value just committed) so a repeated Enter reruns the block.
+    pub fn commitAndRunEditingBlock(self: *DocumentView) !void {
+        const fb = self.focused_block orelse return;
+        const cf = &self.code_fences.items[fb];
+        const name = cf.editing_input orelse return;
+        cf.commitCurrentField();
+        cf.beginEditingInput(name);
+        if (cf.status != .running) {
+            try self.executeWithDeps(cf, false, false);
+        }
     }
 
     fn scrollToFence(self: *DocumentView, fence_idx: usize) void {
@@ -380,9 +459,21 @@ pub const DocumentView = struct {
             .key_press => |key| {
                 self.boundary_hint = null;
                 if (self.isEditingInput()) {
-                    // An input field owns the keyboard; forward everything to it
-                    // instead of applying our own navigation shortcuts.
-                    try self.code_fences.items[self.focused_block.?].handleEvent(ctx, event);
+                    // Tab/Shift-Tab/Enter drive param/block navigation and
+                    // execution; every other key (Escape, text input) is the
+                    // field's own to handle.
+                    if (key.matches(vaxis.Key.tab, .{ .shift = true })) {
+                        self.paramOrBlockPrev();
+                        ctx.consumeAndRedraw();
+                    } else if (key.matches(vaxis.Key.tab, .{})) {
+                        self.paramOrBlockNext();
+                        ctx.consumeAndRedraw();
+                    } else if (key.matches(vaxis.Key.enter, .{})) {
+                        try self.commitAndRunEditingBlock();
+                        ctx.consumeAndRedraw();
+                    } else {
+                        try self.code_fences.items[self.focused_block.?].handleEvent(ctx, event);
+                    }
                     return;
                 }
                 if (key.matches('j', .{}) or key.matches(vaxis.Key.down, .{})) {
@@ -442,6 +533,14 @@ pub const DocumentView = struct {
                             if (self.focused_block) |fb| self.code_fences.items[fb].focused = false;
                             self.focused_block = fi;
                             self.code_fences.items[fi].focused = true;
+                            if (self.code_fences.items[fi].firstEditableInput()) |name| {
+                                self.code_fences.items[fi].beginEditingInput(name);
+                            }
+                            // The clicked block may only be partially visible
+                            // (e.g. its top border/description scrolled just
+                            // out of view) — bring it fully into the viewport,
+                            // same as Tab/Shift-Tab do.
+                            self.scrollToFence(fi);
                             ctx.consumeAndRedraw();
                         }
                     }
@@ -470,8 +569,25 @@ pub const DocumentView = struct {
     }
 
     pub fn draw(self: *DocumentView, ctx: vxfw.DrawContext) Allocator.Error!vxfw.Surface {
+        self.pending_cursor = null;
         const width = ctx.max.width orelse 80;
         const height = ctx.max.height orelse 24;
+        // Keep in sync with what's actually drawn, not just what the last
+        // `.winsize` event reported — that event isn't reliably delivered
+        // (doesn't fire for the initial size, and some terminals/multiplexers
+        // never emit it at all), throwing off scrollToFence's row math.
+        const width_changed = width != self.terminal_width;
+        self.terminal_width = width;
+        self.terminal_height = height;
+        // scroll_offset is a raw row number; a width change reflows paragraph
+        // text above the focused block, shifting its true row without
+        // changing this stale value. Re-anchor so its top border/description
+        // stay in view, same as Tab does — but only actually on a width
+        // change, so free j/k scrolling away from a focused block isn't
+        // fought on every frame.
+        if (width_changed) {
+            if (self.focused_block) |fb| self.scrollToFence(fb);
+        }
 
         const doc = self.document orelse {
             // Empty state
@@ -506,7 +622,7 @@ pub const DocumentView = struct {
         const visible_end: u16 = @min(virtual_height, visible_start + height);
         const visible_height = visible_end - visible_start;
 
-        const output_surface = try vxfw.Surface.init(ctx.arena, self.widget(), .{ .width = width, .height = height });
+        var output_surface = try vxfw.Surface.init(ctx.arena, self.widget(), .{ .width = width, .height = height });
 
         // Copy rows from virtual surface to output
         for (0..visible_height) |r| {
@@ -516,6 +632,20 @@ pub const DocumentView = struct {
                     const cell = virtual_surface.readCell(c, src_row);
                     output_surface.writeCell(@intCast(c), @intCast(r), cell);
                 }
+            }
+        }
+
+        // Place the terminal cursor for the actively-edited param, if it's
+        // within the currently visible (scrolled) window.
+        if (self.pending_cursor) |pc| {
+            const vstart: u32 = visible_start;
+            const vend: u32 = visible_end;
+            if (pc.vrow >= vstart and pc.vrow < vend) {
+                output_surface.cursor = .{
+                    .row = @intCast(pc.vrow - vstart),
+                    .col = pc.col,
+                    .shape = pc.shape,
+                };
             }
         }
 
@@ -779,6 +909,16 @@ pub const DocumentView = struct {
                                 if (row + @as(u16, @intCast(r)) >= surface.size.height) break;
                                 surface.writeCell(@intCast(c), @intCast(row + r), child_surf.readCell(c, r));
                             }
+                        }
+                        // Cell contents were just copied by hand above, which
+                        // drops Surface.cursor — recover it here, translated
+                        // into this call's (still-virtual, pre-scroll) row.
+                        if (child_surf.cursor) |cur| {
+                            self.pending_cursor = .{
+                                .vrow = @as(u32, row) + cur.row,
+                                .col = cur.col,
+                                .shape = cur.shape,
+                            };
                         }
                         row += child_surf.size.height;
                         break;
@@ -1254,7 +1394,7 @@ fn spanTextLen(span: md.Span) usize {
             for (children) |c| l += spanTextLen(c);
             break :blk l;
         },
-        .code => |t| t.len + 2,
+        .code => |t| t.len,
         .link => |l| l.text.len,
     };
 }

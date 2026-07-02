@@ -349,6 +349,17 @@ pub const App = struct {
         self.status_bar_widget.boundary_hint = self.doc_view.boundary_hint;
     }
 
+    /// Requests vxfw focus for the document view whenever a param is being
+    /// edited, so libvaxis shows its native (terminal-blinking) cursor at the
+    /// position DocumentView.draw() computes. A no-op when nothing is being
+    /// edited — DocumentView simply won't set a cursor on its surface that
+    /// frame, regardless of which widget vxfw currently considers focused.
+    fn syncEditFocus(self: *App, ctx: *vxfw.EventContext) !void {
+        if (self.doc_view.isEditingInput()) {
+            try ctx.requestFocus(self.doc_view.widget());
+        }
+    }
+
     fn anyFenceRunning(self: *App) bool {
         for (self.doc_view.code_fences.items) |*cf| {
             if (cf.status == .running) return true;
@@ -389,6 +400,7 @@ pub const App = struct {
                     self.initial_load_done = true;
                 }
                 self.syncStatusBar();
+                try self.syncEditFocus(ctx);
                 if (self.anyFenceRunning()) {
                     try ctx.tick(80, self.widget());
                 }
@@ -425,11 +437,19 @@ pub const App = struct {
                     return;
                 }
 
+                // Ctrl-C always quits, even while a param editor has the
+                // keyboard — checked before the editing bypass below.
+                if (key.matches('c', .{ .ctrl = true })) {
+                    ctx.quit = true;
+                    return;
+                }
+
                 // While editing an input field, it owns the keyboard entirely —
-                // bypass global keys (reload, help, copy, quit) and navigation.
+                // bypass global keys (reload, help, copy) and navigation.
                 if (self.doc_view.isEditingInput()) {
                     try self.doc_view.handleEvent(ctx, event);
                     self.syncStatusBar();
+                    try self.syncEditFocus(ctx);
                     // Committing an input can change an `auto` block's
                     // parameter signature; catch up right away.
                     self.doc_view.checkAutoReruns(false);
@@ -440,13 +460,10 @@ pub const App = struct {
                 }
 
                 // Global keys
-                if (key.matches('c', .{ .ctrl = true })) {
-                    ctx.quit = true;
-                    return;
-                }
                 if (key.matches('r', .{})) {
                     _ = try self.loadFile(false);
                     self.syncStatusBar();
+                    try self.syncEditFocus(ctx);
                     ctx.redraw = true;
                     return;
                 }
@@ -470,6 +487,7 @@ pub const App = struct {
                 // Forward navigation and execution keys to document view
                 try self.doc_view.handleEvent(ctx, event);
                 self.syncStatusBar();
+                try self.syncEditFocus(ctx);
                 // A block may have just finished (e.g. a dependency an `auto`
                 // block watches) or started; catch up before deciding whether
                 // to keep polling.
@@ -492,6 +510,7 @@ pub const App = struct {
             else => {
                 try self.doc_view.handleEvent(ctx, event);
                 self.syncStatusBar();
+                try self.syncEditFocus(ctx);
             },
         }
     }

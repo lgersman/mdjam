@@ -172,13 +172,6 @@ pub const CodeFenceWidget = struct {
                 } else if (key.matches(vaxis.Key.escape, .{})) {
                     self.runner.cancel();
                     ctx.consumeAndRedraw();
-                } else if (key.matches('i', .{})) {
-                    if (self.status != .running) {
-                        if (self.firstEditableInput()) |name| {
-                            self.beginEditingInput(name);
-                            ctx.consumeAndRedraw();
-                        }
-                    }
                 } else if (key.matches('j', .{}) or key.matches(vaxis.Key.down, .{})) {
                     if (self.output_lines.items.len > 0) {
                         const max_scroll = self.output_lines.items.len -| 1;
@@ -212,48 +205,96 @@ pub const CodeFenceWidget = struct {
     }
 
     fn handleInputEditKey(self: *CodeFenceWidget, ctx: *vxfw.EventContext, key: vaxis.Key) anyerror!void {
-        const name = self.editing_input orelse return;
+        if (self.editing_input == null) return;
         if (key.matches(vaxis.Key.escape, .{})) {
             self.editing_input = null;
             self.input_field.clearAndFree();
             ctx.consumeAndRedraw();
             return;
         }
-        if (key.matches(vaxis.Key.enter, .{})) {
-            const value = try self.input_field.toOwnedSlice();
-            defer self.allocator.free(value);
-            try self.setInputValue(name, value);
-            self.editing_input = null;
-            if (self.firstEditableInput()) |next_name| {
-                self.beginEditingInput(next_name);
-            }
-            ctx.consumeAndRedraw();
-            return;
-        }
+        // Tab/Shift-Tab/Enter are intercepted by DocumentView before reaching
+        // here (they drive cross-block param navigation and execution); any
+        // other key is raw text input for the field.
         try self.input_field.handleEvent(ctx, .{ .key_press = key });
     }
 
-    /// Returns the name of the first non-readonly input that doesn't yet have a
-    /// value in the shared state store (i.e. lacks an upstream source).
-    pub fn firstEditableInput(self: *const CodeFenceWidget) ?[]const u8 {
-        const meta = self.block.metadata orelse return null;
-        if (meta.inputs.count() == 0) return null;
-
-        var names_buf: [16][]const u8 = undefined;
+    /// Populates `buf` with this fence's input names in sorted (display) order
+    /// and returns the count. Shared by draw() and the param-navigation helpers
+    /// below so both agree on ordering.
+    fn sortedInputNames(self: *const CodeFenceWidget, buf: *[16][]const u8) usize {
+        const meta = self.block.metadata orelse return 0;
         var n: usize = 0;
         var it = meta.inputs.iterator();
         while (it.next()) |entry| {
-            if (n >= names_buf.len) break;
-            names_buf[n] = entry.key_ptr.*;
+            if (n >= buf.len) break;
+            buf[n] = entry.key_ptr.*;
             n += 1;
         }
-        std.mem.sort([]const u8, names_buf[0..n], {}, lessThanStr);
+        std.mem.sort([]const u8, buf[0..n], {}, lessThanStr);
+        return n;
+    }
 
+    /// Name of the first non-readonly input, in display order (regardless of
+    /// whether it already has a value — navigation stops on every editable
+    /// input, not just unset ones).
+    pub fn firstEditableInput(self: *const CodeFenceWidget) ?[]const u8 {
+        const meta = self.block.metadata orelse return null;
+        var names_buf: [16][]const u8 = undefined;
+        const n = self.sortedInputNames(&names_buf);
         for (names_buf[0..n]) |name| {
             const def = meta.inputs.get(name).?;
             if (def.readonly) continue;
-            if (!self.needsEdit(name)) continue;
             return name;
+        }
+        return null;
+    }
+
+    /// Name of the last non-readonly input, in display order — the entry
+    /// point when arriving at this block backwards (Shift-Tab).
+    pub fn lastEditableInput(self: *const CodeFenceWidget) ?[]const u8 {
+        const meta = self.block.metadata orelse return null;
+        var names_buf: [16][]const u8 = undefined;
+        const n = self.sortedInputNames(&names_buf);
+        var i = n;
+        while (i > 0) {
+            i -= 1;
+            const name = names_buf[i];
+            const def = meta.inputs.get(name).?;
+            if (def.readonly) continue;
+            return name;
+        }
+        return null;
+    }
+
+    /// Non-readonly input after `current` in display order, or null if
+    /// `current` is the last one.
+    pub fn nextEditableInput(self: *const CodeFenceWidget, current: []const u8) ?[]const u8 {
+        const meta = self.block.metadata orelse return null;
+        var names_buf: [16][]const u8 = undefined;
+        const n = self.sortedInputNames(&names_buf);
+        var found_current = false;
+        for (names_buf[0..n]) |name| {
+            if (found_current) {
+                const def = meta.inputs.get(name).?;
+                if (def.readonly) continue;
+                return name;
+            }
+            if (std.mem.eql(u8, name, current)) found_current = true;
+        }
+        return null;
+    }
+
+    /// Non-readonly input before `current` in display order, or null if
+    /// `current` is the first one.
+    pub fn prevEditableInput(self: *const CodeFenceWidget, current: []const u8) ?[]const u8 {
+        const meta = self.block.metadata orelse return null;
+        var names_buf: [16][]const u8 = undefined;
+        const n = self.sortedInputNames(&names_buf);
+        var prev_editable: ?[]const u8 = null;
+        for (names_buf[0..n]) |name| {
+            if (std.mem.eql(u8, name, current)) return prev_editable;
+            const def = meta.inputs.get(name).?;
+            if (!def.readonly) prev_editable = name;
         }
         return null;
     }
@@ -266,10 +307,21 @@ pub const CodeFenceWidget = struct {
         return self.editing_input != null;
     }
 
-    /// True while this input has neither an upstream/store value nor a locally
-    /// entered (but not-yet-committed) value — i.e. it still needs the user's input.
-    fn needsEdit(self: *const CodeFenceWidget, name: []const u8) bool {
-        return !self.storeHasValue(name) and !self.input_values.contains(name);
+    /// Commits the in-progress field text for the input currently being
+    /// edited into `input_values`, without changing edit mode. Callers decide
+    /// afterwards whether to move to another input (`beginEditingInput`) or
+    /// leave edit mode (`stopEditing`).
+    pub fn commitCurrentField(self: *CodeFenceWidget) void {
+        const name = self.editing_input orelse return;
+        const value = self.input_field.toOwnedSlice() catch return;
+        defer self.allocator.free(value);
+        self.setInputValue(name, value) catch {};
+    }
+
+    /// Leaves input-edit mode without committing (mirrors what Escape does).
+    pub fn stopEditing(self: *CodeFenceWidget) void {
+        self.editing_input = null;
+        self.input_field.clearAndFree();
     }
 
     fn storeHasValue(self: *const CodeFenceWidget, name: []const u8) bool {
@@ -318,7 +370,7 @@ pub const CodeFenceWidget = struct {
         try self.input_values.put(name, owned);
     }
 
-    fn beginEditingInput(self: *CodeFenceWidget, name: []const u8) void {
+    pub fn beginEditingInput(self: *CodeFenceWidget, name: []const u8) void {
         self.editing_input = name;
         self.input_field.clearAndFree();
         self.input_field.style = .{ .reverse = true };
@@ -330,9 +382,14 @@ pub const CodeFenceWidget = struct {
         }
     }
 
-    /// Resolve any non-readonly inputs that still lack a store value (local edit,
-    /// else declared default, else empty) and commit them to the shared state
-    /// store so they're available as MDJAM_* env vars for this and later blocks.
+    /// Commit each non-readonly input's current value to the shared state
+    /// store so it's available as an MDJAM_* env var for this and later
+    /// blocks. A local edit (`input_values`) always wins and is written on
+    /// every run — even a rerun after the store already holds this key from
+    /// an earlier run — so re-editing a param and pressing Enter again
+    /// actually takes effect. Only when there's no local edit do we leave an
+    /// existing store value alone, falling back to the declared default
+    /// otherwise.
     fn resolveInputsBeforeExecution(self: *CodeFenceWidget) void {
         const meta = self.block.metadata orelse return;
         var it = meta.inputs.iterator();
@@ -340,8 +397,12 @@ pub const CodeFenceWidget = struct {
             const name = entry.key_ptr.*;
             const def = entry.value_ptr.*;
             if (def.readonly) continue;
+            if (self.input_values.get(name)) |edited| {
+                self.store.set(name, edited, if (meta.id) |id| id else null) catch {};
+                continue;
+            }
             if (self.storeHasValue(name)) continue;
-            const value = self.input_values.get(name) orelse def.default orelse "";
+            const value = def.default orelse "";
             self.store.set(name, value, if (meta.id) |id| id else null) catch {};
         }
     }
@@ -471,7 +532,7 @@ pub const CodeFenceWidget = struct {
         const width = ctx.max.width orelse 80;
         const h = self.height(width);
         const size: vxfw.Size = .{ .width = width, .height = h };
-        const surface = try vxfw.Surface.init(ctx.arena, self.widget(), size);
+        var surface = try vxfw.Surface.init(ctx.arena, self.widget(), size);
 
         const code_fg = theme.dark.code_fg;
         const border_fg = if (self.focused) theme.dark.focused_border else theme.dark.unfocused_border;
@@ -549,14 +610,7 @@ pub const CodeFenceWidget = struct {
             // Inputs: always shown (not just verbose) since they're interactive.
             if (meta.inputs.count() > 0) {
                 var names_buf: [16][]const u8 = undefined;
-                var n: usize = 0;
-                var name_it = meta.inputs.iterator();
-                while (name_it.next()) |entry| {
-                    if (n >= names_buf.len) break;
-                    names_buf[n] = entry.key_ptr.*;
-                    n += 1;
-                }
-                std.mem.sort([]const u8, names_buf[0..n], {}, lessThanStr);
+                const n = self.sortedInputNames(&names_buf);
 
                 for (names_buf[0..n]) |name| {
                     const def = meta.inputs.get(name).?;
@@ -590,15 +644,20 @@ pub const CodeFenceWidget = struct {
                             while (col < field_width) : (col += 1) {
                                 surface.writeCell(field_col + col, row, .{ .char = .{ .grapheme = " ", .width = 1 }, .style = field_style });
                             }
+                            // Ask the terminal to show its own (native, blinking)
+                            // cursor at the insertion point, in this surface's own
+                            // local coordinates — DocumentView translates it into
+                            // document space since it blits this surface's cells
+                            // rather than nesting it as a vxfw child.
+                            surface.cursor = .{
+                                .row = row,
+                                .col = field_col + self.input_field.graphemesBeforeCursor(),
+                                .shape = .block_blink,
+                            };
                         }
                     } else {
                         const value = self.resolvedInputValueForDisplay(ctx.arena, name, def);
-                        const hint: []const u8 = if (def.readonly)
-                            " (readonly)"
-                        else if (self.needsEdit(name))
-                            " [i: edit]"
-                        else
-                            "";
+                        const hint: []const u8 = if (def.readonly) " (readonly)" else "";
                         const line = self.cachedLine(name, "# {s}: {s}{s}", .{ name, value orelse "", hint });
                         writeStr(surface, 2, row, line, meta_style);
                     }

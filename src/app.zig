@@ -189,6 +189,8 @@ pub const App = struct {
         ok,
         /// Owned by the caller; must be freed with `allocator.free`.
         prereq_failed: []const u8,
+        /// Owned by the caller; must be freed with `allocator.free`.
+        read_failed: []const u8,
     };
 
     /// Load (or reload) the markdown file. Resets document state.
@@ -224,6 +226,14 @@ pub const App = struct {
             self.allocator,
             std.Io.Limit.limited(10 * 1024 * 1024),
         ) catch |err| {
+            if (fail_fast_prereqs) {
+                const msg = std.fmt.allocPrint(
+                    self.allocator,
+                    "mdjam: cannot read '{s}': {s}\n",
+                    .{ self.file_path, if (err == error.FileNotFound) "no such file" else @errorName(err) },
+                ) catch try self.allocator.dupe(u8, "mdjam: cannot read file\n");
+                return .{ .read_failed = msg };
+            }
             std.log.err("Failed to read '{s}': {}", .{ self.file_path, err });
             return .ok;
         };

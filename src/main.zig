@@ -63,7 +63,7 @@ pub fn main(init: std.process.Init) !void {
         return err;
     };
     switch (outcome) {
-        .prereq_failed => |msg| {
+        .prereq_failed, .read_failed => |msg| {
             defer gpa.free(msg);
             try std.Io.File.writeStreamingAll(std.Io.File.stderr(), io, msg);
             _ = app.destroy();

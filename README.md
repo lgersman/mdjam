@@ -2,13 +2,11 @@
 
 A terminal markdown viewer where bash code blocks can be executed inline. Scripts run, their output appears directly below the fence, values flow between blocks, and the whole thing stays in your terminal.
 
-## Why Bun?
-
-This project cannot run on Node.js. The TUI engine, `@opentui/core`, is a Zig-compiled native renderer that exposes itself via `bun:ffi` — Bun's built-in foreign function interface for calling into native shared libraries. Bun can `dlopen` a `.so`/`.dylib` and call typed C-ABI functions directly from JavaScript, with zero glue code. Node.js has no equivalent; its native extension path requires N-API `.node` addons compiled against a specific Node ABI. The two mechanisms are incompatible, so the dependency on `@opentui/core` makes Bun the only viable runtime.
+Implemented in [Zig](https://ziglang.org) — ships as a single statically-linked binary with no runtime dependencies.
 
 ## Prerequisites
 
-This project uses [mise](https://mise.jdx.dev) to manage the Bun version and [direnv](https://direnv.net) to activate it automatically when you enter the directory.
+This project uses [mise](https://mise.jdx.dev) to manage the Zig version and [direnv](https://direnv.net) to activate it automatically when you enter the directory.
 
 1. **Install mise:**
    ```bash
@@ -35,7 +33,7 @@ This project uses [mise](https://mise.jdx.dev) to manage the Bun version and [di
    ```bash
    direnv allow
    ```
-   mise will install Bun at the version declared in `.mise.toml` and activate it automatically on every subsequent `cd`.
+   mise will install Zig and ZLS at the versions declared in `.mise.toml` and activate them automatically on every subsequent `cd`.
 
 ## Installation
 
@@ -54,17 +52,16 @@ INSTALL_DIR=/usr/local/bin curl -sSL https://raw.githubusercontent.com/lgersman/
 Pin a specific version with `VERSION`:
 
 ```bash
-VERSION=0.1.0 curl -sSL https://raw.githubusercontent.com/lgersman/mdjam/main/install.sh | sh
+VERSION=0.2.0 curl -sSL https://raw.githubusercontent.com/lgersman/mdjam/main/install.sh | sh
 ```
 
 **Windows** — use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and run the Linux install command above.
 
-**Build from source** (requires [Bun](https://bun.sh) ≥ 1.3.14):
+**Build from source** (requires [Zig](https://ziglang.org) ≥ 0.16.0):
 
 ```bash
-bun install
-bun run build
-bun link          # makes `mdjam` available globally
+zig build -Doptimize=ReleaseSafe
+# binary is at zig-out/bin/mdjam
 ```
 
 ## Usage
@@ -103,13 +100,10 @@ Watch mode is automatically disabled when reading from stdin.
 | `b` / `PgUp` | Page up |
 | `g` | Jump to top |
 | `G` | Jump to bottom |
-| `Tab` / `Shift+Tab` | Focus next / previous executable block |
+| `Tab` | Focus next executable block |
 | `Enter` | Execute focused block |
 | `Esc` | Cancel running block |
-| `Ctrl+Shift+C` | Copy selected text to clipboard |
-| `Ctrl+Shift+V` | Paste into focused input |
 | `r` | Reload document |
-| `s` | Toggle state store panel |
 | `?` | Show / hide keyboard help |
 | `Ctrl+C` | Quit (runs teardown script if declared) |
 
@@ -129,6 +123,11 @@ setup: |
   export BASE_URL=https://staging.example.com
 teardown: |
   echo "Session ended"
+variables:
+  environment: staging
+  namespace:
+    description: Kubernetes namespace to deploy into
+    default: staging
 ---
 ```
 
@@ -138,13 +137,40 @@ teardown: |
 | `prerequisites.tools` | CLI tools that must be on `$PATH` before the viewer starts |
 | `prerequisites.env` | Environment variables that must be set before the viewer starts |
 | `setup` | Bash script that runs once after prerequisites pass, before rendering |
-| `teardown` | Bash script that runs on quit (`Ctrl+C` or `SIGTERM`) |
+| `teardown` | Bash script that runs on quit (`Ctrl+C`) |
+| `variables` | Named values pre-populated into the state store before any block runs |
+| `variables.<name>` | Plain scalar (`name: value`) for a value with no description |
+| `variables.<name>.description` | Documents what the value is for |
+| `variables.<name>.default` | The value itself, when using the nested form |
+| `variables.<name>.readonly` | Parsed for parity with code-block variables; not currently enforced in the frontmatter editor |
+| `variables.<name>.output` | When `true`, this variable's current value is included in the JSON object mdjam prints to stdout on exit |
 
-If any prerequisite is unmet, a diagnostic panel is shown and all code fence execution is blocked. If `setup` exits non-zero, an error panel is shown at the top and execution is blocked.
+If any prerequisite is unmet, mdjam exits immediately and prints why to stderr — the viewer never opens. If `setup` or `teardown` exits non-zero, mdjam's own exit code reflects that (execution isn't blocked, and an error banner is shown at the top of the document for a failed `setup`). Setup/teardown stdout is only shown with `--verbose`; stderr is always shown, printed to the real terminal once mdjam exits.
+
+#### Output variables
+
+Mark a frontmatter variable with `output: true` to have its final value printed as JSON on stdout when mdjam exits normally (`Ctrl+C`, not a prerequisite/read failure):
+
+```markdown
+---
+variables:
+  build_tag:
+    readonly: true
+    output: true
+  work_dir:
+    output: true
+---
+```
+
+```json
+{"build_tag":"v20260706-abc123","work_dir":"/tmp/tmp.XXXXXX"}
+```
+
+Values reflect whatever is in the state store at exit time — the frontmatter default, or whatever a block wrote via `::set-output`/`export` since. This pairs well with `--delegate` and `--stdin` for scripting mdjam as a step in another program.
 
 ### Executable code blocks
 
-Bash fences become interactive. A plain fence with no metadata is manually executable with no inputs or outputs:
+Bash fences become interactive. A plain fence with no metadata is manually executable with no variables or outputs:
 
 ````markdown
 ```bash
@@ -152,7 +178,7 @@ echo "hello"
 ```
 ````
 
-Add a YAML metadata comment block at the top of the fence body to declare inputs, outputs, dependencies, and auto-execution:
+Add a YAML metadata comment block at the top of the fence body to declare variables, outputs, dependencies, and auto-execution:
 
 ````markdown
 ```bash
@@ -160,7 +186,7 @@ Add a YAML metadata comment block at the top of the fence body to declare inputs
 # id: fetch-token
 # description: Retrieve auth token
 # auto: false
-# inputs:
+# variables:
 #   API_HOST:
 #     description: Base URL
 #     default: https://api.example.com
@@ -180,10 +206,10 @@ echo "::set-output name=TOKEN::$TOKEN"
 | `id` | string | Unique name for this block, used by `depends` in other blocks |
 | `description` | string | Label shown in the block header |
 | `auto` | boolean | Execute automatically on document load (default: `false`) |
-| `inputs` | map | Named values the block reads from the state store |
-| `inputs.<name>.description` | string | Shown above the input field |
-| `inputs.<name>.default` | string | Value used when no upstream block has set the key |
-| `inputs.<name>.readonly` | boolean | Display only — cannot be edited, must come from upstream (default: `false`) |
+| `variables` | map | Named values the block reads from the state store — same shape as frontmatter's `variables` |
+| `variables.<name>.description` | string | Shown above the field |
+| `variables.<name>.default` | string | Value used when no upstream block has set the key |
+| `variables.<name>.readonly` | boolean | Display only — cannot be edited, must come from upstream (default: `false`) |
 | `outputs` | string[] | Keys this block will export via `::set-output` |
 | `depends` | string[] | IDs of blocks that must succeed before this one runs |
 
@@ -214,19 +240,19 @@ Values written by a block with `id: my-block` are stored under both the bare key
 
 ### Block status indicators
 
+The status bar shows a `[indicator]` badge for the focused block, except for
+`idle` (nothing has happened yet) and `done` results from `auto: true`
+execution (the user never asked to see them) — both are shown as no badge at all.
+
 | Indicator | Meaning |
 |---|---|
-| `Ready` | Never run |
-| `Blocked — missing: FOO` | A required input has no value yet |
-| `Running…` | Script is executing |
-| `Done (exit 0)` | Succeeded |
-| `Failed (exit 1)` | Exited non-zero |
-| `Cancelled` | Cancelled with `Esc` |
-| `Skipped — dep failed: <id>` | A dependency block failed |
+| spinner (`⠋⠙⠹⠸...`) | Script is running |
+| `done` | Succeeded |
+| `failed` | Exited non-zero |
+| `cancelled` | Cancelled with `Esc` |
+| `blocked` | Prerequisites failed |
 
 ## Using mdjam as an agent tool
-
-`mdjam --agent-docs` prints a compact reference optimised for pasting into a tool description field.
 
 The non-interactive pattern: pipe markdown in via `--stdin`, mark blocks `auto: true` so they run without keypresses, and use `--delegate` to forward the focused block's stdout/stderr and exit code back to the caller.
 
@@ -245,44 +271,23 @@ Usage:
 - Mark bash fences with `auto: true` to execute them on load.
 - `--delegate` forwards the focused block's stdout/stderr and mirrors its exit code.
 - `echo "::set-output name=KEY::value"` inside a block captures KEY into the state store.
-- Run `mdjam --agent-docs` for full reference.
-```
-
-### Example — MCP / JSON tool definition
-
-```json
-{
-  "name": "mdjam",
-  "description": "<paste output of: mdjam --agent-docs>",
-  "inputSchema": {
-    "type": "object",
-    "required": ["markdown"],
-    "properties": {
-      "markdown": {
-        "type": "string",
-        "description": "Markdown with bash code fences to execute"
-      }
-    }
-  }
-}
-```
-
-The wrapper script that bridges the JSON call to the CLI:
-
-```bash
-#!/usr/bin/env bash
-# reads {"markdown":"..."} from stdin, runs it, returns stdout
-markdown=$(jq -r '.markdown')
-printf '%s' "$markdown" | mdjam --stdin --delegate --no-watch
 ```
 
 ## Development
 
 ```bash
-bun test           # run unit tests
-bun run build      # compile to dist/
-bun run dev        # watch mode — rebuilds on source change
-bun start -- <file.md>   # run the source directly without building
-```
+# Debug build and run
+zig build run -- examples/01-hello.md
 
-The required Bun version is pinned in `.mise.toml`; see [Prerequisites](#prerequisites) for setup.
+# Run tests
+zig build test
+
+# Format source
+zig fmt src/
+
+# Release build (statically linked)
+zig build -Doptimize=ReleaseSafe
+
+# Cross-compile
+zig build -Dtarget=aarch64-linux-musl -Doptimize=ReleaseSafe
+```

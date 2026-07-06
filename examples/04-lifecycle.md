@@ -24,7 +24,7 @@ mdjam supports three lifecycle hooks that fire around your blocks:
 |------|------|---------|
 | `prerequisites` | Before anything | Require tools / env vars |
 | `setup` | Once on load | Create shared resources |
-| `teardown` | On quit (`q`) | Clean up those resources |
+| `teardown` | On quit (`Ctrl+C`) | Clean up those resources |
 
 ---
 
@@ -35,10 +35,10 @@ This document requires:
 - **Tools**: `curl`, `jq` — checked via `command -v`
 - **Env**: `$HOME` — checked for existence in the environment
 
-If any prerequisite fails, **all blocks are locked** and cannot be run.
+If any prerequisite fails, **mdjam exits immediately**, printing which tools/env vars
+are missing to stderr — the viewer never opens.
 
-> Try opening a document with `prerequisites.tools: [nonexistent-tool]` to see the
-> lock screen.
+> Try opening a document with `prerequisites.tools: [nonexistent-tool]` to see this.
 
 ---
 
@@ -70,7 +70,10 @@ All blocks share `$MDJAM_WORK_DIR` — created once by setup, available everywhe
 #   - data_file
 # ---
 DATA="$MDJAM_WORK_DIR/response.json"
-curl -s "https://httpbin.org/get?hello=mdjam" -o "$DATA"
+if ! curl -fsS --retry 2 --max-time 10 "https://httpbingo.org/get?hello=mdjam" -o "$DATA"; then
+  echo "Failed to reach httpbingo.org — check your network connection" >&2
+  exit 1
+fi
 echo "::set-output name=data_file::$DATA"
 echo "Saved to: $DATA"
 wc -c < "$DATA"
@@ -83,7 +86,7 @@ wc -c < "$DATA"
 # depends:
 #   - fetch
 # ---
-echo "URL args received by httpbin:"
+echo "URL args received by httpbingo:"
 jq '.args' "$MDJAM_DATA_FILE"
 ```
 
@@ -107,11 +110,30 @@ echo "::set-output name=summary_file::$SUMMARY"
 
 ---
 
+## Watch it run
+
+Press **Enter** on the block below and look at the status bar: while a script
+is executing, its badge cycles through a spinning braille animation
+(`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`) instead of showing a static label.
+
+```bash
+# ---
+# description: Sleeps for a few seconds so you can watch the spinner
+# ---
+echo "Starting a slow task..."
+sleep 5
+echo "Done!"
+```
+
+---
+
 ## Teardown
 
-When you press **q** to quit, mdjam runs the `teardown` script before exiting.
+When you press **Ctrl+C** to quit, mdjam runs the `teardown` script before exiting.
 In this document, teardown removes the whole `$WORK_DIR` workspace.
 
-The teardown output appears in a panel at the bottom of the screen just before exit.
+Teardown's stderr is printed to the real terminal right after mdjam exits; with
+`--verbose`, its stdout is shown too. If `teardown` exits non-zero, that becomes
+mdjam's own exit code.
 
-> Press **q** now — you'll see the cleanup message flash before the terminal restores.
+> Press **Ctrl+C** now — you'll see the cleanup message after the terminal restores.

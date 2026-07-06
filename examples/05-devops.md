@@ -18,10 +18,14 @@ teardown: |
   echo "Session: $START → $END"
   rm -rf "$MDJAM_RUNBOOK_DIR"
   echo "Runbook session closed."
-defaults:
-  environment: staging
+variables:
+  environment:
+    description: Target deployment environment
+    default: staging
   image_name: myapp
-  registry: registry.example.com
+  registry:
+    description: Container registry hostname
+    default: registry.example.com
 ---
 
 # Deployment Runbook
@@ -30,7 +34,7 @@ This runbook walks through a full application deployment using mdjam features:
 
 - **Prerequisites** — verify `git` and `docker` are available
 - **Setup / Teardown** — shared workspace, session logging
-- **Inputs** — operator-provided values (env, image tag, registry)
+- **Variables** — operator-provided values (env, image tag, registry)
 - **Outputs** — propagate build artifacts between steps
 - **Dependencies** — enforce step ordering
 - **Auto blocks** — show context immediately on load
@@ -59,13 +63,13 @@ echo "Session dir : $MDJAM_RUNBOOK_DIR"
 
 ## 2. Confirm deployment target
 
-Fill in the inputs and press **Enter** to confirm before proceeding.
+Fill in the variables and press **Enter** to confirm before proceeding.
 
 ```bash
 # ---
 # id: confirm-target
 # description: Operator confirms the target environment and image
-# inputs:
+# variables:
 #   environment:
 #     description: "Target environment: staging / production"
 #     default: staging
@@ -254,7 +258,7 @@ echo "Push complete: $MDJAM_REGISTRY/$MDJAM_IMAGE_NAME@$DIGEST"
 # description: Rolls out to the target environment
 # depends:
 #   - push
-# inputs:
+# variables:
 #   environment:
 #     description: "Override target environment if needed"
 #     readonly: true
@@ -316,7 +320,7 @@ Run only if a deployment needs to be reverted — independent of the deploy chai
 # ---
 # id: rollback
 # description: Rolls back to the previous stable image
-# inputs:
+# variables:
 #   environment:
 #     description: Environment to roll back
 #     readonly: true

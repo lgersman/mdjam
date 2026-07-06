@@ -1,5 +1,12 @@
 {
+  "attribution": {
+    "commit": ""
+  },
   "enabledPlugins": {
     "ponytail@ponytail": true
+  },
+  "defaultMode": "bypassPermissions",
+  "permissions": {
+    "ask": ["Bash(git commit:*)", "Bash(git push:*)"]
   }
 }

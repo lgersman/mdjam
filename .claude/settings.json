@@ -1,19 +1,12 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(xargs ls)",
-      "Bash(cat /home/lgersman/.local/share/mise/installs/zig/0.16.0/lib/std/start.zig | grep -A 30 \"fn callMain\\\\b\" | head -50)",
-      "Read(//home/lgersman/.local/share/mise/installs/zig/0.16.0/lib/std/**)",
-      "Bash(cat /home/lgersman/.local/share/mise/installs/zig/0.16.0/lib/std/Io/Threaded.zig | head -50)",
-      "Read(//home/lgersman/.local/share/mise/installs/zig/0.16.0/lib/std/Io/**)",
-      "Bash(find /home/lgersman -name \"*.zig\" -path \"*/vaxis*\" 2>/dev/null | head -10 && find /root -name \"*.zig\" -path \"*/vaxis*\" 2>/dev/null | head -5)",
-      "Read(//home/lgersman/**)",
-      "Read(//root/**)",
-      "Bash(PATH=/home/lgersman/.local/share/mise/shims:__TRACKED_VAR__ zig build)",
-      "Bash(echo \"Exit code: $?\")"
-    ]
+  "attribution": {
+    "commit": ""
   },
   "enabledPlugins": {
     "ponytail@ponytail": true
+  },
+  "defaultMode": "bypassPermissions",
+  "permissions": {
+    "ask": ["Bash(git commit:*)", "Bash(git push:*)"]
   }
 }

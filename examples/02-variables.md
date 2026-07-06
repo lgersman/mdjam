@@ -5,6 +5,10 @@ variables:
   target:
     description: Who to greet
     default: World
+  session_id:
+    description: Printed as JSON on stdout when mdjam exits
+    default: local-dev
+    output: true
 ---
 
 # Variables
@@ -32,6 +36,13 @@ This document started with:
 # description: Reads the document-level variables
 # ---
 echo "$MDJAM_GREETING, $MDJAM_TARGET!"
+```
+
+`session_id` is additionally marked `output: true`, so quitting this document
+(`Ctrl+C`) prints its final value as JSON on stdout:
+
+```json
+{"session_id":"local-dev"}
 ```
 
 ---

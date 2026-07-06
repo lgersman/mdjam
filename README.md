@@ -143,8 +143,30 @@ variables:
 | `variables.<name>.description` | Documents what the value is for |
 | `variables.<name>.default` | The value itself, when using the nested form |
 | `variables.<name>.readonly` | Parsed for parity with code-block variables; not currently enforced in the frontmatter editor |
+| `variables.<name>.output` | When `true`, this variable's current value is included in the JSON object mdjam prints to stdout on exit |
 
 If any prerequisite is unmet, mdjam exits immediately and prints why to stderr — the viewer never opens. If `setup` or `teardown` exits non-zero, mdjam's own exit code reflects that (execution isn't blocked, and an error banner is shown at the top of the document for a failed `setup`). Setup/teardown stdout is only shown with `--verbose`; stderr is always shown, printed to the real terminal once mdjam exits.
+
+#### Output variables
+
+Mark a frontmatter variable with `output: true` to have its final value printed as JSON on stdout when mdjam exits normally (`Ctrl+C`, not a prerequisite/read failure):
+
+```markdown
+---
+variables:
+  build_tag:
+    readonly: true
+    output: true
+  work_dir:
+    output: true
+---
+```
+
+```json
+{"build_tag":"v20260706-abc123","work_dir":"/tmp/tmp.XXXXXX"}
+```
+
+Values reflect whatever is in the state store at exit time — the frontmatter default, or whatever a block wrote via `::set-output`/`export` since. This pairs well with `--delegate` and `--stdin` for scripting mdjam as a step in another program.
 
 ### Executable code blocks
 

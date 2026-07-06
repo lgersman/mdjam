@@ -130,6 +130,7 @@ pub const App = struct {
     pub fn destroy(self: *App) u8 {
         self.runTeardown();
         self.flushPostRunOutput();
+        if (self.initial_load_done) self.writeOutputVariables();
         const code = self.exit_code;
 
         self.doc_view.deinit();
@@ -181,6 +182,41 @@ pub const App = struct {
         if (self.post_run_stderr.items.len > 0) {
             std.Io.File.writeStreamingAll(std.Io.File.stderr(), self.io, self.post_run_stderr.items) catch {};
         }
+    }
+
+    /// Print the current values of all frontmatter variables declared with
+    /// `output: true` as a single JSON object on stdout. Called once, on
+    /// normal exit, after the TUI has released the terminal.
+    fn writeOutputVariables(self: *App) void {
+        const fm = self.fm orelse return;
+
+        var any_output = false;
+        var scan = fm.variables.iterator();
+        while (scan.next()) |kv| {
+            if (kv.value_ptr.output) {
+                any_output = true;
+                break;
+            }
+        }
+        if (!any_output) return;
+
+        var aw = std.Io.Writer.Allocating.init(self.allocator);
+        defer aw.deinit();
+        var stringify: std.json.Stringify = .{ .writer = &aw.writer };
+
+        stringify.beginObject() catch return;
+        var it = fm.variables.iterator();
+        while (it.next()) |kv| {
+            if (!kv.value_ptr.output) continue;
+            stringify.objectField(kv.key_ptr.*) catch return;
+            const value = self.store.getCopy(kv.key_ptr.*, self.allocator) catch null;
+            defer if (value) |v| self.allocator.free(v);
+            stringify.write(value) catch return;
+        }
+        stringify.endObject() catch return;
+        stringify.writer.writeByte('\n') catch return;
+
+        std.Io.File.writeStreamingAll(std.Io.File.stdout(), self.io, aw.writer.buffered()) catch {};
     }
 
     /// Outcome of an initial (fail-fast) load, used by main() to decide

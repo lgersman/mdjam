@@ -376,6 +376,16 @@ pub const CodeFenceWidget = struct {
         self.input_field.style = .{ .reverse = true };
         const meta = self.block.metadata orelse return;
         const def = meta.inputs.get(name) orelse return;
+        // Same precedence as resolvedInputValueForDisplay: store (upstream/
+        // shared-default edit) > local edit > declared default. Without the
+        // store check, re-entering edit mode on an input that another block
+        // (or a frontmatter default) already set would silently discard that
+        // value and prefill from the stale declared default instead.
+        if (self.store.getCopy(name, self.allocator) catch null) |v| {
+            defer self.allocator.free(v);
+            self.input_field.insertSliceAtCursor(v) catch {};
+            return;
+        }
         const prefill = self.input_values.get(name) orelse def.default;
         if (prefill) |p| {
             self.input_field.insertSliceAtCursor(p) catch {};

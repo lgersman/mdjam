@@ -12,6 +12,7 @@ pub const Context = enum {
     codeblock, // a code block is focused
     running, // a block is actively executing
     editing_input, // an input field is being edited
+    editing_frontmatter, // a document-level default field is being edited
 };
 
 // Braille-dot spinner frames for the "running" badge, advanced once per tick
@@ -33,6 +34,11 @@ pub const StatusBar = struct {
     pub fn setFocusedFence(self: *StatusBar, fence: ?*CodeFenceWidget) void {
         self.focused_fence = fence;
         self.context = contextFor(fence);
+    }
+
+    pub fn setEditingFrontmatter(self: *StatusBar) void {
+        self.focused_fence = null;
+        self.context = .editing_frontmatter;
     }
 
     pub fn update(self: *StatusBar) void {
@@ -99,6 +105,7 @@ pub const StatusBar = struct {
             .codeblock => "Enter: run  y: copy  Tab/S-Tab: next/prev  Esc: deselect",
             .running => "Esc: cancel",
             .editing_input => "Enter: run  Tab/S-Tab: next/prev param  Esc: cancel",
+            .editing_frontmatter => "Enter: save  Tab/S-Tab: next/prev field  Esc: cancel",
         };
         const hints_style: vaxis.Style = if (self.boundary_hint != null)
             .{ .fg = .{ .rgb = .{ 0xE5, 0xC0, 0x7B } }, .bg = bg, .italic = true }

@@ -208,6 +208,9 @@ pub const App = struct {
             self.document = null;
         }
         _ = self.doc_arena.reset(.free_all);
+        // Must run before fm.deinit() frees the `defaults` strings that
+        // doc_view.fm_editing_key may currently be borrowing.
+        self.doc_view.resetFrontmatterEditing();
         if (self.fm) |*fm| {
             fm.deinit(self.allocator);
             self.fm = null;
@@ -351,23 +354,16 @@ pub const App = struct {
     }
 
     fn syncStatusBar(self: *App) void {
-        const focused = if (self.doc_view.focused_block) |fb|
-            &self.doc_view.code_fences.items[fb]
-        else
-            null;
-        self.status_bar_widget.setFocusedFence(focused);
-        self.status_bar_widget.boundary_hint = self.doc_view.boundary_hint;
-    }
-
-    /// Requests vxfw focus for the document view whenever a param is being
-    /// edited, so libvaxis shows its native (terminal-blinking) cursor at the
-    /// position DocumentView.draw() computes. A no-op when nothing is being
-    /// edited — DocumentView simply won't set a cursor on its surface that
-    /// frame, regardless of which widget vxfw currently considers focused.
-    fn syncEditFocus(self: *App, ctx: *vxfw.EventContext) !void {
-        if (self.doc_view.isEditingInput()) {
-            try ctx.requestFocus(self.doc_view.widget());
+        if (self.doc_view.isEditingFrontmatter()) {
+            self.status_bar_widget.setEditingFrontmatter();
+        } else {
+            const focused = if (self.doc_view.focused_block) |fb|
+                &self.doc_view.code_fences.items[fb]
+            else
+                null;
+            self.status_bar_widget.setFocusedFence(focused);
         }
+        self.status_bar_widget.boundary_hint = self.doc_view.boundary_hint;
     }
 
     fn anyFenceRunning(self: *App) bool {
@@ -410,7 +406,6 @@ pub const App = struct {
                     self.initial_load_done = true;
                 }
                 self.syncStatusBar();
-                try self.syncEditFocus(ctx);
                 if (self.anyFenceRunning()) {
                     try ctx.tick(80, self.widget());
                 }
@@ -459,7 +454,6 @@ pub const App = struct {
                 if (self.doc_view.isEditingInput()) {
                     try self.doc_view.handleEvent(ctx, event);
                     self.syncStatusBar();
-                    try self.syncEditFocus(ctx);
                     // Committing an input can change an `auto` block's
                     // parameter signature; catch up right away.
                     self.doc_view.checkAutoReruns(false);
@@ -473,7 +467,6 @@ pub const App = struct {
                 if (key.matches('r', .{})) {
                     _ = try self.loadFile(false);
                     self.syncStatusBar();
-                    try self.syncEditFocus(ctx);
                     ctx.redraw = true;
                     return;
                 }
@@ -497,7 +490,6 @@ pub const App = struct {
                 // Forward navigation and execution keys to document view
                 try self.doc_view.handleEvent(ctx, event);
                 self.syncStatusBar();
-                try self.syncEditFocus(ctx);
                 // A block may have just finished (e.g. a dependency an `auto`
                 // block watches) or started; catch up before deciding whether
                 // to keep polling.
@@ -520,7 +512,6 @@ pub const App = struct {
             else => {
                 try self.doc_view.handleEvent(ctx, event);
                 self.syncStatusBar();
-                try self.syncEditFocus(ctx);
             },
         }
     }
@@ -536,13 +527,21 @@ pub const App = struct {
         const doc_height: u16 = if (height > 1) height - 1 else height;
         const doc_width: u16 = width;
 
-        // Document view (main content)
+        // Document view (main content). Its cursor (if any) is hoisted onto
+        // this root surface below instead of requesting vxfw focus on the
+        // doc_view widget itself: vxfw dispatches key events straight to the
+        // focused widget and only bubbles up to the root if it's not
+        // consumed, so focusing doc_view would silently stop App.handleEvent
+        // (status bar sync, auto-reruns, reload/help/copy, tick scheduling)
+        // from ever running again once the first field edit begins.
+        var doc_cursor: ?vxfw.CursorState = null;
         {
             const doc_ctx = ctx.withConstraints(
                 .{ .width = doc_width, .height = doc_height },
                 .{ .width = doc_width, .height = doc_height },
             );
             const doc_surf = try self.doc_view.draw(doc_ctx);
+            doc_cursor = doc_surf.cursor;
             try children.append(ctx.arena, .{
                 .origin = .{ .row = 0, .col = 0 },
                 .surface = doc_surf,
@@ -591,6 +590,9 @@ pub const App = struct {
             .widget = self.widget(),
             .buffer = root_buffer,
             .children = children.items,
+            // doc_view is placed at origin (0, 0) above, so its local cursor
+            // coordinates are already in this surface's coordinate space.
+            .cursor = doc_cursor,
         };
     }
 };

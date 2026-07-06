@@ -46,6 +46,17 @@ pub const DocumentView = struct {
     terminal_width: u16,
     terminal_height: u16,
 
+    // Editable frontmatter `defaults`: name of the key currently being edited
+    // (borrowed from frontmatter.defaults; must be cleared before that map is
+    // freed on reload — see resetFrontmatterEditing), the text field backing
+    // that edit, and heap-cached rendered strings (see CodeFenceWidget's
+    // input_line_cache doc for why these can't be ctx.arena-backed).
+    fm_editing_key: ?[]const u8,
+    fm_input_field: vxfw.TextField,
+    fm_line_cache: std.StringHashMap([]u8),
+    fm_editing_label_cache: ?[]u8,
+    fm_editing_field_cache: ?[]u8,
+
     // Optional suspend/resume callbacks for interactive blocks
     suspend_fn: ?block_runner.SuspendFn,
     resume_fn: ?block_runner.ResumeFn,
@@ -78,6 +89,11 @@ pub const DocumentView = struct {
             .suspend_fn = null,
             .resume_fn = null,
             .suspend_ctx = null,
+            .fm_editing_key = null,
+            .fm_input_field = vxfw.TextField.init(allocator),
+            .fm_line_cache = std.StringHashMap([]u8).init(allocator),
+            .fm_editing_label_cache = null,
+            .fm_editing_field_cache = null,
         };
     }
 
@@ -86,6 +102,27 @@ pub const DocumentView = struct {
         self.code_fences.deinit(self.allocator);
         for (self.toc_widgets.items) |*tw| tw.deinit();
         self.toc_widgets.deinit(self.allocator);
+        var fm_cache_it = self.fm_line_cache.valueIterator();
+        while (fm_cache_it.next()) |v| self.allocator.free(v.*);
+        self.fm_line_cache.deinit();
+        if (self.fm_editing_label_cache) |v| self.allocator.free(v);
+        if (self.fm_editing_field_cache) |v| self.allocator.free(v);
+        self.fm_input_field.deinit();
+    }
+
+    /// Clears any in-progress frontmatter-default edit and its caches. Must be
+    /// called before the current `frontmatter` is freed (e.g. on reload) since
+    /// `fm_editing_key` and cache keys are borrowed from its `defaults` map.
+    pub fn resetFrontmatterEditing(self: *DocumentView) void {
+        self.fm_editing_key = null;
+        self.fm_input_field.clearAndFree();
+        var it = self.fm_line_cache.valueIterator();
+        while (it.next()) |v| self.allocator.free(v.*);
+        self.fm_line_cache.clearRetainingCapacity();
+        if (self.fm_editing_label_cache) |v| self.allocator.free(v);
+        self.fm_editing_label_cache = null;
+        if (self.fm_editing_field_cache) |v| self.allocator.free(v);
+        self.fm_editing_field_cache = null;
     }
 
     pub fn setDocument(self: *DocumentView, doc: *const md.Document) Allocator.Error!void {
@@ -139,46 +176,98 @@ pub const DocumentView = struct {
         // params) the first block; Shift-Tab starts from the last.
     }
 
+    const FenceEntryDirection = enum { first, last };
+
+    /// Focuses fence `idx` and auto-edits its first (or, arriving backwards,
+    /// last) editable input, mirroring how a click or Tab lands on a block.
+    fn focusFence(self: *DocumentView, idx: usize, dir: FenceEntryDirection) void {
+        self.focused_block = idx;
+        self.code_fences.items[idx].focused = true;
+        const name = switch (dir) {
+            .first => self.code_fences.items[idx].firstEditableInput(),
+            .last => self.code_fences.items[idx].lastEditableInput(),
+        };
+        if (name) |n| self.code_fences.items[idx].beginEditingInput(n);
+        self.scrollToFence(idx);
+    }
+
+    /// Enters editing on the first frontmatter default field and scrolls it
+    /// into view (it's always the very top of the document).
+    fn enterFrontmatterField(self: *DocumentView, name: []const u8) void {
+        self.beginEditingFrontmatterKey(name);
+        self.scroll_offset = 0;
+    }
+
+    /// Tab: advance to the next frontmatter default field, the next block, or
+    /// (from within a document-defaults edit) hand off to the first block
+    /// once defaults are exhausted.
     pub fn focusNextBlock(self: *DocumentView) void {
-        if (self.code_fences.items.len == 0) return;
-        if (self.focused_block) |fb| {
-            if (fb + 1 >= self.code_fences.items.len) {
+        if (self.fm_editing_key) |cur| {
+            if (self.nextFrontmatterKey(cur)) |next| {
+                self.commitFrontmatterField();
+                self.beginEditingFrontmatterKey(next);
+                return;
+            }
+            self.commitFrontmatterField();
+            self.stopEditingFrontmatter();
+            if (self.code_fences.items.len == 0) {
                 self.boundary_hint = "Already at the last block";
                 return;
             }
-            self.code_fences.items[fb].focused = false;
-            self.focused_block = fb + 1;
-        } else {
-            self.focused_block = 0;
+            self.focusFence(0, .first);
+            return;
         }
-        const new_fb = self.focused_block.?;
-        self.code_fences.items[new_fb].focused = true;
-        if (self.code_fences.items[new_fb].firstEditableInput()) |name| {
-            self.code_fences.items[new_fb].beginEditingInput(name);
-        }
-        self.scrollToFence(new_fb);
-    }
-
-    pub fn focusPrevBlock(self: *DocumentView) void {
-        if (self.code_fences.items.len == 0) return;
-        if (self.focused_block) |fb| {
-            if (fb == 0) {
-                self.boundary_hint = "Already at the first block";
+        if (self.focused_block == null) {
+            if (self.firstFrontmatterKey()) |name| {
+                self.enterFrontmatterField(name);
                 return;
             }
-            self.code_fences.items[fb].focused = false;
-            self.focused_block = fb - 1;
-        } else {
-            self.focused_block = self.code_fences.items.len - 1;
+            if (self.code_fences.items.len == 0) return;
+            self.focusFence(0, .first);
+            return;
         }
-        const new_fb = self.focused_block.?;
-        self.code_fences.items[new_fb].focused = true;
-        // Arriving backwards lands on the last param, not the first, so
-        // Shift-Tab traverses the document in a consistent reverse order.
-        if (self.code_fences.items[new_fb].lastEditableInput()) |name| {
-            self.code_fences.items[new_fb].beginEditingInput(name);
+        const fb = self.focused_block.?;
+        if (fb + 1 >= self.code_fences.items.len) {
+            self.boundary_hint = "Already at the last block";
+            return;
         }
-        self.scrollToFence(new_fb);
+        self.code_fences.items[fb].focused = false;
+        self.focusFence(fb + 1, .first);
+    }
+
+    /// Shift-Tab mirror of `focusNextBlock`. Arriving backwards from the
+    /// first block lands on the last frontmatter default field, if any.
+    pub fn focusPrevBlock(self: *DocumentView) void {
+        if (self.fm_editing_key) |cur| {
+            if (self.prevFrontmatterKey(cur)) |prev| {
+                self.commitFrontmatterField();
+                self.beginEditingFrontmatterKey(prev);
+                return;
+            }
+            self.boundary_hint = "Already at the first field";
+            return;
+        }
+        if (self.focused_block == null) {
+            if (self.code_fences.items.len == 0) {
+                if (self.lastFrontmatterKey()) |name| self.enterFrontmatterField(name);
+                return;
+            }
+            self.focusFence(self.code_fences.items.len - 1, .last);
+            return;
+        }
+        const fb = self.focused_block.?;
+        if (fb == 0) {
+            if (self.lastFrontmatterKey()) |name| {
+                self.code_fences.items[fb].focused = false;
+                self.focused_block = null;
+                self.enterFrontmatterField(name);
+                return;
+            }
+            self.boundary_hint = "Already at the first block";
+            return;
+        }
+        self.code_fences.items[fb].focused = false;
+        self.focusFence(fb - 1, .last);
     }
 
     /// Tab while editing a param: advance to the next editable param in this
@@ -204,7 +293,10 @@ pub const DocumentView = struct {
         self.focusNextBlock();
     }
 
-    /// Shift-Tab mirror of `paramOrBlockNext`.
+    /// Shift-Tab mirror of `paramOrBlockNext`. From the first param of the
+    /// first block, hands off to the last frontmatter default field if the
+    /// document has any (checked before committing, same boundary-safety
+    /// rule as above); otherwise it's a true boundary.
     pub fn paramOrBlockPrev(self: *DocumentView) void {
         const fb = self.focused_block orelse return;
         const cf = &self.code_fences.items[fb];
@@ -214,7 +306,7 @@ pub const DocumentView = struct {
             cf.beginEditingInput(prev_name);
             return;
         }
-        if (fb == 0) {
+        if (fb == 0 and self.lastFrontmatterKey() == null) {
             self.boundary_hint = "Already at the first block";
             return;
         }
@@ -237,6 +329,112 @@ pub const DocumentView = struct {
         if (cf.status != .running) {
             try self.executeWithDeps(cf, false, false);
         }
+    }
+
+    /// Populates `buf` with frontmatter default names in sorted (display)
+    /// order and returns the count. Mirrors CodeFenceWidget.sortedInputNames
+    /// so both editable-field kinds traverse consistently.
+    fn sortedFrontmatterKeys(self: *const DocumentView, buf: *[16][]const u8) usize {
+        const fm = self.frontmatter orelse return 0;
+        var n: usize = 0;
+        var it = fm.defaults.iterator();
+        while (it.next()) |entry| {
+            if (n >= buf.len) break;
+            buf[n] = entry.key_ptr.*;
+            n += 1;
+        }
+        std.mem.sort([]const u8, buf[0..n], {}, lessThanStr);
+        return n;
+    }
+
+    pub fn hasFrontmatterDefaults(self: *const DocumentView) bool {
+        const fm = self.frontmatter orelse return false;
+        return fm.defaults.count() > 0;
+    }
+
+    pub fn firstFrontmatterKey(self: *const DocumentView) ?[]const u8 {
+        var buf: [16][]const u8 = undefined;
+        const n = self.sortedFrontmatterKeys(&buf);
+        return if (n > 0) buf[0] else null;
+    }
+
+    pub fn lastFrontmatterKey(self: *const DocumentView) ?[]const u8 {
+        var buf: [16][]const u8 = undefined;
+        const n = self.sortedFrontmatterKeys(&buf);
+        return if (n > 0) buf[n - 1] else null;
+    }
+
+    fn nextFrontmatterKey(self: *const DocumentView, current: []const u8) ?[]const u8 {
+        var buf: [16][]const u8 = undefined;
+        const n = self.sortedFrontmatterKeys(&buf);
+        var found = false;
+        for (buf[0..n]) |name| {
+            if (found) return name;
+            if (std.mem.eql(u8, name, current)) found = true;
+        }
+        return null;
+    }
+
+    fn prevFrontmatterKey(self: *const DocumentView, current: []const u8) ?[]const u8 {
+        var buf: [16][]const u8 = undefined;
+        const n = self.sortedFrontmatterKeys(&buf);
+        var prev: ?[]const u8 = null;
+        for (buf[0..n]) |name| {
+            if (std.mem.eql(u8, name, current)) return prev;
+            prev = name;
+        }
+        return null;
+    }
+
+    pub fn isEditingFrontmatter(self: *const DocumentView) bool {
+        return self.fm_editing_key != null;
+    }
+
+    /// Resolved value for a frontmatter default: state store (reflects a
+    /// prior edit or a block's `::set-output`) wins over the declared
+    /// frontmatter value. Always returns a `self.allocator`-owned copy (or
+    /// null) so callers free uniformly regardless of source.
+    fn resolvedFrontmatterValue(self: *const DocumentView, name: []const u8) ?[]const u8 {
+        if (self.store.getCopy(name, self.allocator) catch null) |v| return v;
+        const fm = self.frontmatter orelse return null;
+        const v = fm.defaults.get(name) orelse return null;
+        return self.allocator.dupe(u8, v) catch null;
+    }
+
+    pub fn beginEditingFrontmatterKey(self: *DocumentView, name: []const u8) void {
+        self.fm_editing_key = name;
+        self.fm_input_field.clearAndFree();
+        self.fm_input_field.style = .{ .reverse = true };
+        if (self.resolvedFrontmatterValue(name)) |v| {
+            defer self.allocator.free(v);
+            self.fm_input_field.insertSliceAtCursor(v) catch {};
+        }
+    }
+
+    /// Commits the in-progress field text directly into the shared state
+    /// store — unlike a fence param (which stages into `input_values` until
+    /// the block runs), a frontmatter default has no associated execution
+    /// step, so the edit takes effect immediately for every block reading it.
+    fn commitFrontmatterField(self: *DocumentView) void {
+        const name = self.fm_editing_key orelse return;
+        const value = self.fm_input_field.toOwnedSlice() catch return;
+        defer self.allocator.free(value);
+        self.store.set(name, value, null) catch {};
+    }
+
+    fn stopEditingFrontmatter(self: *DocumentView) void {
+        self.fm_editing_key = null;
+        self.fm_input_field.clearAndFree();
+    }
+
+    /// Enter while editing a frontmatter default: commit it and reopen the
+    /// same field (refreshed with the committed value) — there's no
+    /// execution step to trigger, just a value that's now visible to every
+    /// block reading it.
+    pub fn commitFrontmatterEdit(self: *DocumentView) void {
+        const name = self.fm_editing_key orelse return;
+        self.commitFrontmatterField();
+        self.beginEditingFrontmatterKey(name);
     }
 
     fn scrollToFence(self: *DocumentView, fence_idx: usize) void {
@@ -294,10 +492,12 @@ pub const DocumentView = struct {
         }
     }
 
-    /// True when the focused code fence has an input field actively being edited.
-    /// Callers should forward key events directly to it rather than applying
-    /// their own navigation/shortcut handling.
+    /// True when a frontmatter default field or the focused code fence has an
+    /// input field actively being edited. Callers should forward key events
+    /// directly to it rather than applying their own navigation/shortcut
+    /// handling.
     pub fn isEditingInput(self: *const DocumentView) bool {
+        if (self.fm_editing_key != null) return true;
         const fb = self.focused_block orelse return false;
         return self.code_fences.items[fb].isEditingInput();
     }
@@ -458,6 +658,26 @@ pub const DocumentView = struct {
             },
             .key_press => |key| {
                 self.boundary_hint = null;
+                if (self.fm_editing_key != null) {
+                    // Tab/Shift-Tab/Enter/Escape drive field navigation and
+                    // commit; every other key is the field's own to handle.
+                    if (key.matches(vaxis.Key.tab, .{ .shift = true })) {
+                        self.focusPrevBlock();
+                        ctx.consumeAndRedraw();
+                    } else if (key.matches(vaxis.Key.tab, .{})) {
+                        self.focusNextBlock();
+                        ctx.consumeAndRedraw();
+                    } else if (key.matches(vaxis.Key.enter, .{})) {
+                        self.commitFrontmatterEdit();
+                        ctx.consumeAndRedraw();
+                    } else if (key.matches(vaxis.Key.escape, .{})) {
+                        self.stopEditingFrontmatter();
+                        ctx.consumeAndRedraw();
+                    } else {
+                        try self.fm_input_field.handleEvent(ctx, event);
+                    }
+                    return;
+                }
                 if (self.isEditingInput()) {
                     // Tab/Shift-Tab/Enter drive param/block navigation and
                     // execution; every other key (Escape, text input) is the
@@ -528,6 +748,13 @@ pub const DocumentView = struct {
             .mouse => |mouse| {
                 if (mouse.type == .press and mouse.button == .left and mouse.row >= 0) {
                     const vrow: u32 = self.scroll_offset +| @as(u32, @intCast(mouse.row));
+                    if (self.hasFrontmatterDefaults() and vrow < self.frontmatterHeaderHeight()) {
+                        if (self.focused_block) |fb| self.code_fences.items[fb].focused = false;
+                        self.focused_block = null;
+                        if (self.firstFrontmatterKey()) |name| self.beginEditingFrontmatterKey(name);
+                        ctx.consumeAndRedraw();
+                        return;
+                    }
                     if (self.fenceAtVirtualRow(vrow)) |fi| {
                         if (self.focused_block != fi) {
                             if (self.focused_block) |fb| self.code_fences.items[fb].focused = false;
@@ -680,10 +907,17 @@ pub const DocumentView = struct {
     fn frontmatterHeaderHeight(self: *const DocumentView) u16 {
         const banner_h = self.setupErrorHeight();
         const fm = self.frontmatter orelse return banner_h;
+        const defaults_n: u16 = @intCast(fm.defaults.count());
 
         if (!self.verbose) {
-            // Non-verbose: description + separator
-            return banner_h + (if (fm.description != null) @as(u16, 2) else 0);
+            // Non-verbose: description (optional) + editable default rows
+            // (always shown, not just verbose, since they're interactive —
+            // same policy as CodeFenceWidget's inputs) + trailing separator.
+            var h: u16 = 0;
+            if (fm.description != null) h += 1;
+            h += defaults_n;
+            if (h == 0) return banner_h;
+            return banner_h + h + 1;
         }
 
         // Verbose: count YAML lines
@@ -697,14 +931,74 @@ pub const DocumentView = struct {
             if (has_tools) h += 1 + @as(u16, @intCast(fm.prerequisites.tools.len)); // "  tools:" + items
             if (has_env) h += 1 + @as(u16, @intCast(fm.prerequisites.env.len)); // "  env:" + items
         }
-        if (fm.defaults.count() > 0) {
-            h += 1 + @as(u16, @intCast(fm.defaults.count())); // "defaults:" + items
+        if (defaults_n > 0) {
+            h += 1 + defaults_n; // "defaults:" + items
         }
         if (h == 0) return banner_h;
         return banner_h + h + 2; // opening banner + closing rule
     }
 
-    fn renderFrontmatterHeader(self: *const DocumentView, surface: vxfw.Surface, start_row: u16, width: u16) u16 {
+    /// Renders one frontmatter default row at `indent`: an editable field if
+    /// it's the one currently being edited, otherwise its resolved value
+    /// (state store, reflecting any prior edit, over the declared default).
+    fn renderFrontmatterDefaultRow(self: *DocumentView, surface: vxfw.Surface, row: u16, width: u16, indent: u16, name: []const u8, style: vaxis.Style) void {
+        if (self.fm_editing_key != null and std.mem.eql(u8, self.fm_editing_key.?, name)) {
+            if (self.fm_editing_label_cache) |v| self.allocator.free(v);
+            self.fm_editing_label_cache = std.fmt.allocPrint(self.allocator, "{s}: ", .{name}) catch null;
+            const label = self.fm_editing_label_cache orelse "";
+            writeStr(surface, indent, row, label, style);
+            const field_col: u16 = indent + @as(u16, @intCast(label.len));
+            if (width <= field_col) return;
+            const field_width = width - field_col;
+
+            if (self.fm_editing_field_cache) |v| self.allocator.free(v);
+            self.fm_editing_field_cache = std.fmt.allocPrint(self.allocator, "{s}{s}", .{
+                self.fm_input_field.buf.firstHalf(),
+                self.fm_input_field.buf.secondHalf(),
+            }) catch null;
+            const field_text = self.fm_editing_field_cache orelse "";
+            const field_style: vaxis.Style = .{ .reverse = true };
+            var col: u16 = 0;
+            var it = std.unicode.Utf8Iterator{ .bytes = field_text, .i = 0 };
+            while (it.nextCodepointSlice()) |g| {
+                if (col >= field_width) break;
+                surface.writeCell(field_col + col, row, .{ .char = .{ .grapheme = g, .width = 1 }, .style = field_style });
+                col += 1;
+            }
+            while (col < field_width) : (col += 1) {
+                surface.writeCell(field_col + col, row, .{ .char = .{ .grapheme = " ", .width = 1 }, .style = field_style });
+            }
+            // See CodeFenceWidget.draw's identical cursor recovery comment —
+            // here there's no nested surface to blit, so this row is already
+            // in virtual (pre-scroll) document coordinates.
+            self.pending_cursor = .{
+                .vrow = @as(u32, row),
+                .col = field_col + self.fm_input_field.graphemesBeforeCursor(),
+                .shape = .block_blink,
+            };
+            return;
+        }
+
+        const resolved = self.resolvedFrontmatterValue(name);
+        defer if (resolved) |r| self.allocator.free(r);
+        const fresh = std.fmt.allocPrint(self.allocator, "{s}: {s}", .{ name, resolved orelse "" }) catch return;
+        if (self.fm_line_cache.fetchRemove(name)) |kv| self.allocator.free(kv.value);
+        self.fm_line_cache.put(name, fresh) catch {};
+        writeStr(surface, indent, row, fresh, style);
+    }
+
+    fn renderFrontmatterDefaultRows(self: *DocumentView, surface: vxfw.Surface, start_row: u16, width: u16, indent: u16, style: vaxis.Style) u16 {
+        var row = start_row;
+        var buf: [16][]const u8 = undefined;
+        const n = self.sortedFrontmatterKeys(&buf);
+        for (buf[0..n]) |name| {
+            self.renderFrontmatterDefaultRow(surface, row, width, indent, name, style);
+            row += 1;
+        }
+        return row;
+    }
+
+    fn renderFrontmatterHeader(self: *DocumentView, surface: vxfw.Surface, start_row: u16, width: u16) u16 {
         const err_row = self.renderSetupError(surface, start_row, width);
         const fm = self.frontmatter orelse return err_row;
         var row = err_row;
@@ -712,10 +1006,16 @@ pub const DocumentView = struct {
         const s: vaxis.Style = .{ .fg = .{ .index = 8 } };
 
         if (!self.verbose) {
-            // Non-verbose: italic description + thin separator
+            // Non-verbose: italic description, editable default rows (always
+            // shown — they're interactive), then a thin separator.
             if (fm.description) |desc| {
                 writeStr(surface, 0, row, desc, .{ .fg = .{ .index = 8 }, .italic = true });
                 row += 1;
+            }
+            if (fm.defaults.count() > 0) {
+                row = self.renderFrontmatterDefaultRows(surface, row, width, 0, s);
+            }
+            if (fm.description != null or fm.defaults.count() > 0) {
                 writeFillRow(surface, row, width, "─", s);
                 row += 1;
             }
@@ -771,14 +1071,7 @@ pub const DocumentView = struct {
         if (fm.defaults.count() > 0) {
             writeStr(surface, 0, row, "defaults:", s);
             row += 1;
-            var it = fm.defaults.iterator();
-            while (it.next()) |entry| {
-                const k = entry.key_ptr.*;
-                writeStr(surface, 2, row, k, s);
-                writeStr(surface, @intCast(2 + k.len), row, ": ", s);
-                writeStr(surface, @intCast(4 + k.len), row, entry.value_ptr.*, s);
-                row += 1;
-            }
+            row = self.renderFrontmatterDefaultRows(surface, row, width, 2, s);
         }
 
         // Closing rule
@@ -1406,6 +1699,10 @@ fn measureListHeight(items: []const md.ListItem) usize {
         h += measureListHeight(item.children);
     }
     return h;
+}
+
+fn lessThanStr(_: void, a: []const u8, b: []const u8) bool {
+    return std.mem.order(u8, a, b) == .lt;
 }
 
 fn countLines(text: []const u8) usize {

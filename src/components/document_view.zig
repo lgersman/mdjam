@@ -325,10 +325,14 @@ pub const DocumentView = struct {
         const cf = &self.code_fences.items[fb];
         const name = cf.editing_input orelse return;
         cf.commitCurrentField();
-        cf.beginEditingInput(name);
         if (cf.status != .running) {
             try self.executeWithDeps(cf, false, false);
         }
+        // Refresh the display after resolveInputsBeforeExecution has written
+        // this run's values to the store — beginEditingInput reads the store
+        // first, so refreshing before execution would show the *previous*
+        // run's value for this field instead of what was just committed.
+        cf.beginEditingInput(name);
     }
 
     /// Populates `buf` with frontmatter default names in sorted (display)

@@ -1,19 +1,14 @@
 const std = @import("std");
+const variables = @import("variables.zig");
 
 const Allocator = std.mem.Allocator;
-
-pub const InputDef = struct {
-    description: ?[]const u8,
-    default: ?[]const u8,
-    readonly: bool,
-};
 
 pub const FenceMeta = struct {
     id: ?[]const u8,
     description: ?[]const u8,
     auto: bool,
     interactive: bool,
-    inputs: std.StringHashMap(InputDef),
+    variables: variables.VariableMap,
     outputs: [][]const u8,
     depends: [][]const u8,
 };
@@ -32,7 +27,7 @@ pub fn parse(allocator: Allocator, body: []const u8) Allocator.Error!ParseResult
         .description = null,
         .auto = false,
         .interactive = false,
-        .inputs = std.StringHashMap(InputDef).init(allocator),
+        .variables = variables.VariableMap.init(allocator),
         .outputs = &.{},
         .depends = &.{},
     };
@@ -41,13 +36,13 @@ pub fn parse(allocator: Allocator, body: []const u8) Allocator.Error!ParseResult
     const marker = "# ---";
     if (!std.mem.startsWith(u8, body, marker)) {
         // No metadata block — free the empty meta and return null
-        meta.inputs.deinit();
+        meta.variables.deinit();
         return .{ .meta = null, .body = body };
     }
 
     // Find the end of the first marker line
     const first_nl = std.mem.indexOfScalar(u8, body, '\n') orelse {
-        meta.inputs.deinit();
+        meta.variables.deinit();
         return .{ .meta = null, .body = body };
     };
     var rest = body[first_nl + 1 ..];
@@ -75,7 +70,7 @@ pub fn parse(allocator: Allocator, body: []const u8) Allocator.Error!ParseResult
             try yaml_lines.append(allocator, line[1..]);
         } else {
             // Not a comment line — metadata block is malformed, return raw body
-            meta.inputs.deinit();
+            meta.variables.deinit();
             return .{ .meta = null, .body = body };
         }
 
@@ -83,7 +78,7 @@ pub fn parse(allocator: Allocator, body: []const u8) Allocator.Error!ParseResult
     }
 
     if (!found_end) {
-        meta.inputs.deinit();
+        meta.variables.deinit();
         return .{ .meta = null, .body = body };
     }
 
@@ -115,9 +110,9 @@ fn parseYamlLines(allocator: Allocator, meta: *FenceMeta, lines: []const []const
         const value_raw = std.mem.trim(u8, line[colon + 1 ..], " \t");
 
         if (std.mem.eql(u8, key, "id")) {
-            meta.id = try allocator.dupe(u8, stripQuotes(value_raw));
+            meta.id = try allocator.dupe(u8, variables.stripQuotes(value_raw));
         } else if (std.mem.eql(u8, key, "description")) {
-            meta.description = try allocator.dupe(u8, stripQuotes(value_raw));
+            meta.description = try allocator.dupe(u8, variables.stripQuotes(value_raw));
         } else if (std.mem.eql(u8, key, "auto")) {
             meta.auto = std.mem.eql(u8, value_raw, "true");
         } else if (std.mem.eql(u8, key, "interactive")) {
@@ -139,62 +134,18 @@ fn parseYamlLines(allocator: Allocator, meta: *FenceMeta, lines: []const []const
                     try depends.append(allocator, try allocator.dupe(u8, std.mem.trim(u8, item[2..], " \t")));
                 }
             }
-        } else if (std.mem.eql(u8, key, "inputs")) {
-            // Parse nested input definitions
-            try parseInputs(allocator, meta, lines, &i);
+        } else if (std.mem.eql(u8, key, "variables")) {
+            // The shared parser expects a cursor already pointing at the
+            // first unconsumed line; this loop's own `: (i += 1)` will then
+            // advance past whatever it left consumed, so back up by one.
+            var vidx: usize = i + 1;
+            try variables.parseVariablesSection(allocator, &meta.variables, lines, &vidx);
+            i = vidx - 1;
         }
     }
 
     meta.outputs = try outputs.toOwnedSlice(allocator);
     meta.depends = try depends.toOwnedSlice(allocator);
-}
-
-fn parseInputs(allocator: Allocator, meta: *FenceMeta, lines: []const []const u8, i: *usize) Allocator.Error!void {
-    // After "inputs:" we expect lines indented by 2 spaces (input name)
-    // then lines indented by 4 spaces (input fields)
-    while (i.* + 1 < lines.len and std.mem.startsWith(u8, lines[i.* + 1], "  ")) {
-        i.* += 1;
-        const name_line = std.mem.trim(u8, lines[i.*], " \t");
-        // Should end with ":"
-        if (!std.mem.endsWith(u8, name_line, ":")) continue;
-        const input_name = name_line[0 .. name_line.len - 1];
-
-        var input_def: InputDef = .{
-            .description = null,
-            .default = null,
-            .readonly = false,
-        };
-
-        // Parse the nested fields (4-space indent)
-        while (i.* + 1 < lines.len and std.mem.startsWith(u8, lines[i.* + 1], "    ")) {
-            i.* += 1;
-            const field_line = std.mem.trim(u8, lines[i.*], " \t");
-            const colon = std.mem.indexOfScalar(u8, field_line, ':') orelse continue;
-            const fkey = std.mem.trim(u8, field_line[0..colon], " \t");
-            const fval = std.mem.trim(u8, field_line[colon + 1 ..], " \t");
-
-            if (std.mem.eql(u8, fkey, "description")) {
-                input_def.description = try allocator.dupe(u8, stripQuotes(fval));
-            } else if (std.mem.eql(u8, fkey, "default")) {
-                input_def.default = try allocator.dupe(u8, stripQuotes(fval));
-            } else if (std.mem.eql(u8, fkey, "readonly")) {
-                input_def.readonly = std.mem.eql(u8, fval, "true");
-            }
-        }
-
-        const owned_name = try allocator.dupe(u8, input_name);
-        try meta.inputs.put(owned_name, input_def);
-    }
-}
-
-fn stripQuotes(s: []const u8) []const u8 {
-    if (s.len >= 2 and s[0] == '"' and s[s.len - 1] == '"') {
-        return s[1 .. s.len - 1];
-    }
-    if (s.len >= 2 and s[0] == '\'' and s[s.len - 1] == '\'') {
-        return s[1 .. s.len - 1];
-    }
-    return s;
 }
 
 pub fn deinit(allocator: Allocator, meta: *FenceMeta) void {
@@ -205,11 +156,5 @@ pub fn deinit(allocator: Allocator, meta: *FenceMeta) void {
     for (meta.depends) |v| allocator.free(v);
     allocator.free(meta.depends);
 
-    var it = meta.inputs.iterator();
-    while (it.next()) |kv| {
-        allocator.free(kv.key_ptr.*);
-        if (kv.value_ptr.description) |d| allocator.free(d);
-        if (kv.value_ptr.default) |d| allocator.free(d);
-    }
-    meta.inputs.deinit();
+    variables.deinitVariables(allocator, &meta.variables);
 }

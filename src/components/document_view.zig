@@ -46,8 +46,8 @@ pub const DocumentView = struct {
     terminal_width: u16,
     terminal_height: u16,
 
-    // Editable frontmatter `defaults`: name of the key currently being edited
-    // (borrowed from frontmatter.defaults; must be cleared before that map is
+    // Editable frontmatter `variables`: name of the key currently being edited
+    // (borrowed from frontmatter.variables; must be cleared before that map is
     // freed on reload — see resetFrontmatterEditing), the text field backing
     // that edit, and heap-cached rendered strings (see CodeFenceWidget's
     // input_line_cache doc for why these can't be ctx.arena-backed).
@@ -337,7 +337,7 @@ pub const DocumentView = struct {
     fn sortedFrontmatterKeys(self: *const DocumentView, buf: *[16][]const u8) usize {
         const fm = self.frontmatter orelse return 0;
         var n: usize = 0;
-        var it = fm.defaults.iterator();
+        var it = fm.variables.iterator();
         while (it.next()) |entry| {
             if (n >= buf.len) break;
             buf[n] = entry.key_ptr.*;
@@ -349,7 +349,7 @@ pub const DocumentView = struct {
 
     pub fn hasFrontmatterDefaults(self: *const DocumentView) bool {
         const fm = self.frontmatter orelse return false;
-        return fm.defaults.count() > 0;
+        return fm.variables.count() > 0;
     }
 
     pub fn firstFrontmatterKey(self: *const DocumentView) ?[]const u8 {
@@ -397,8 +397,8 @@ pub const DocumentView = struct {
     fn resolvedFrontmatterValue(self: *const DocumentView, name: []const u8) ?[]const u8 {
         if (self.store.getCopy(name, self.allocator) catch null) |v| return v;
         const fm = self.frontmatter orelse return null;
-        const v = fm.defaults.get(name) orelse return null;
-        return self.allocator.dupe(u8, v) catch null;
+        const def = fm.variables.get(name) orelse return null;
+        return self.allocator.dupe(u8, def.default orelse "") catch null;
     }
 
     pub fn beginEditingFrontmatterKey(self: *DocumentView, name: []const u8) void {
@@ -578,7 +578,7 @@ pub const DocumentView = struct {
             hasher.update(std.mem.asBytes(&dep.run_count));
         }
 
-        var it = meta.inputs.iterator();
+        var it = meta.variables.iterator();
         while (it.next()) |entry| {
             hasher.update(entry.key_ptr.*);
             fence.hashInputValue(&hasher, entry.key_ptr.*, entry.value_ptr.*);
@@ -907,15 +907,15 @@ pub const DocumentView = struct {
     fn frontmatterHeaderHeight(self: *const DocumentView) u16 {
         const banner_h = self.setupErrorHeight();
         const fm = self.frontmatter orelse return banner_h;
-        const defaults_n: u16 = @intCast(fm.defaults.count());
+        const variables_n: u16 = @intCast(fm.variables.count());
 
         if (!self.verbose) {
-            // Non-verbose: description (optional) + editable default rows
+            // Non-verbose: description (optional) + editable variable rows
             // (always shown, not just verbose, since they're interactive —
-            // same policy as CodeFenceWidget's inputs) + trailing separator.
+            // same policy as CodeFenceWidget's variables) + trailing separator.
             var h: u16 = 0;
             if (fm.description != null) h += 1;
-            h += defaults_n;
+            h += variables_n;
             if (h == 0) return banner_h;
             return banner_h + h + 1;
         }
@@ -931,8 +931,8 @@ pub const DocumentView = struct {
             if (has_tools) h += 1 + @as(u16, @intCast(fm.prerequisites.tools.len)); // "  tools:" + items
             if (has_env) h += 1 + @as(u16, @intCast(fm.prerequisites.env.len)); // "  env:" + items
         }
-        if (defaults_n > 0) {
-            h += 1 + defaults_n; // "defaults:" + items
+        if (variables_n > 0) {
+            h += 1 + variables_n; // "variables:" + items
         }
         if (h == 0) return banner_h;
         return banner_h + h + 2; // opening banner + closing rule
@@ -942,6 +942,11 @@ pub const DocumentView = struct {
     /// it's the one currently being edited, otherwise its resolved value
     /// (state store, reflecting any prior edit, over the declared default).
     fn renderFrontmatterDefaultRow(self: *DocumentView, surface: vxfw.Surface, row: u16, width: u16, indent: u16, name: []const u8, style: vaxis.Style) void {
+        const description: ?[]const u8 = if (self.frontmatter) |fm|
+            if (fm.variables.get(name)) |def| def.description else null
+        else
+            null;
+
         if (self.fm_editing_key != null and std.mem.eql(u8, self.fm_editing_key.?, name)) {
             if (self.fm_editing_label_cache) |v| self.allocator.free(v);
             self.fm_editing_label_cache = std.fmt.allocPrint(self.allocator, "{s}: ", .{name}) catch null;
@@ -949,7 +954,7 @@ pub const DocumentView = struct {
             writeStr(surface, indent, row, label, style);
             const field_col: u16 = indent + @as(u16, @intCast(label.len));
             if (width <= field_col) return;
-            const field_width = width - field_col;
+            const field_width = descriptionAwareFieldWidth(width - field_col, description);
 
             if (self.fm_editing_field_cache) |v| self.allocator.free(v);
             self.fm_editing_field_cache = std.fmt.allocPrint(self.allocator, "{s}{s}", .{
@@ -968,6 +973,10 @@ pub const DocumentView = struct {
             while (col < field_width) : (col += 1) {
                 surface.writeCell(field_col + col, row, .{ .char = .{ .grapheme = " ", .width = 1 }, .style = field_style });
             }
+            if (description) |desc| {
+                const desc_style: vaxis.Style = .{ .fg = .{ .index = 8 }, .italic = true };
+                writeStrRightAligned(surface, row, width, field_col + field_width, desc, desc_style);
+            }
             // See CodeFenceWidget.draw's identical cursor recovery comment —
             // here there's no nested surface to blit, so this row is already
             // in virtual (pre-scroll) document coordinates.
@@ -985,6 +994,12 @@ pub const DocumentView = struct {
         if (self.fm_line_cache.fetchRemove(name)) |kv| self.allocator.free(kv.value);
         self.fm_line_cache.put(name, fresh) catch {};
         writeStr(surface, indent, row, fresh, style);
+
+        if (description) |desc| {
+            const desc_style: vaxis.Style = .{ .fg = .{ .index = 8 }, .italic = true };
+            const min_col: u16 = indent + @as(u16, @intCast(fresh.len));
+            writeStrRightAligned(surface, row, width, min_col, desc, desc_style);
+        }
     }
 
     fn renderFrontmatterDefaultRows(self: *DocumentView, surface: vxfw.Surface, start_row: u16, width: u16, indent: u16, style: vaxis.Style) u16 {
@@ -1012,10 +1027,10 @@ pub const DocumentView = struct {
                 writeStr(surface, 0, row, desc, .{ .fg = .{ .index = 8 }, .italic = true });
                 row += 1;
             }
-            if (fm.defaults.count() > 0) {
+            if (fm.variables.count() > 0) {
                 row = self.renderFrontmatterDefaultRows(surface, row, width, 0, s);
             }
-            if (fm.description != null or fm.defaults.count() > 0) {
+            if (fm.description != null or fm.variables.count() > 0) {
                 writeFillRow(surface, row, width, "─", s);
                 row += 1;
             }
@@ -1025,7 +1040,7 @@ pub const DocumentView = struct {
         // Verbose: check there's something to show
         const has_content = fm.title != null or fm.description != null or
             fm.prerequisites.tools.len > 0 or fm.prerequisites.env.len > 0 or
-            fm.defaults.count() > 0;
+            fm.variables.count() > 0;
         if (!has_content) return err_row;
 
         // Opening rule (no label)
@@ -1068,8 +1083,8 @@ pub const DocumentView = struct {
             }
         }
 
-        if (fm.defaults.count() > 0) {
-            writeStr(surface, 0, row, "defaults:", s);
+        if (fm.variables.count() > 0) {
+            writeStr(surface, 0, row, "variables:", s);
             row += 1;
             row = self.renderFrontmatterDefaultRows(surface, row, width, 2, s);
         }
@@ -1748,4 +1763,46 @@ fn writeStr(surface: vxfw.Surface, col: u16, row: u16, s: []const u8, style: vax
         });
         c += 1;
     }
+}
+
+/// Writes `s` right-aligned in `row`, ending just before `right_edge`
+/// (exclusive) and never starting before `min_col`, leaving at least one
+/// column of gap. Truncates from the end when there isn't room for all of
+/// `s`; renders nothing when there isn't room for even one column plus gap.
+fn writeStrRightAligned(surface: vxfw.Surface, row: u16, right_edge: u16, min_col: u16, s: []const u8, style: vaxis.Style) void {
+    const avail = (right_edge -| min_col) -| 1;
+    if (avail == 0) return;
+
+    var len: u16 = 0;
+    var it = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
+    while (it.nextCodepointSlice()) |_| len += 1;
+    const shown: u16 = @min(len, avail);
+    if (shown == 0) return;
+
+    const start_col = right_edge - shown;
+    var it2 = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
+    var written: u16 = 0;
+    while (it2.nextCodepointSlice()) |g| {
+        if (written >= shown) break;
+        surface.writeCell(start_col + written, row, .{ .char = .{ .grapheme = g, .width = 1 }, .style = style });
+        written += 1;
+    }
+}
+
+/// Shrinks an editable field's width to leave room for `description`
+/// (rendered right-aligned via `writeStrRightAligned`) so it stays visible
+/// while the field is focused, unless that would leave less than
+/// `min_field_width` columns to actually edit in — in which case the field
+/// keeps the full width and the description is dropped for this frame.
+fn descriptionAwareFieldWidth(full_width: u16, description: ?[]const u8) u16 {
+    const desc = description orelse return full_width;
+    var desc_len: u16 = 0;
+    var it = std.unicode.Utf8Iterator{ .bytes = desc, .i = 0 };
+    while (it.nextCodepointSlice()) |_| desc_len += 1;
+    if (desc_len == 0) return full_width;
+
+    const reserve = desc_len + 1; // +1 gap column before the description
+    const min_field_width: u16 = 4;
+    if (full_width > reserve + min_field_width) return full_width - reserve;
+    return full_width;
 }

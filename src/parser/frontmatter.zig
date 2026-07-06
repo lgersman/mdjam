@@ -1,4 +1,5 @@
 const std = @import("std");
+const variables = @import("variables.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -13,7 +14,7 @@ pub const Frontmatter = struct {
     prerequisites: Prerequisites,
     setup: ?[]const u8,
     teardown: ?[]const u8,
-    defaults: std.StringHashMap([]const u8),
+    variables: variables.VariableMap,
 
     pub fn deinit(self: *Frontmatter, allocator: Allocator) void {
         if (self.title) |v| allocator.free(v);
@@ -25,12 +26,7 @@ pub const Frontmatter = struct {
         for (self.prerequisites.env) |e| allocator.free(e);
         allocator.free(self.prerequisites.env);
 
-        var it = self.defaults.iterator();
-        while (it.next()) |kv| {
-            allocator.free(kv.key_ptr.*);
-            allocator.free(kv.value_ptr.*);
-        }
-        self.defaults.deinit();
+        variables.deinitVariables(allocator, &self.variables);
     }
 };
 
@@ -69,7 +65,7 @@ pub fn parse(allocator: Allocator, source: []const u8) Allocator.Error!ParseResu
         .prerequisites = .{ .tools = &.{}, .env = &.{} },
         .setup = null,
         .teardown = null,
-        .defaults = std.StringHashMap([]const u8).init(allocator),
+        .variables = variables.VariableMap.init(allocator),
     };
     errdefer fm.deinit(allocator);
 
@@ -159,7 +155,11 @@ fn parseYaml(allocator: Allocator, fm: *Frontmatter, yaml: []const u8) Allocator
                 var block_indent: usize = 0;
                 while (line_idx < raw_lines.items.len) {
                     const bl = raw_lines.items[line_idx];
-                    if (bl.len == 0) { try block.appendSlice(allocator, "\n"); line_idx += 1; continue; }
+                    if (bl.len == 0) {
+                        try block.appendSlice(allocator, "\n");
+                        line_idx += 1;
+                        continue;
+                    }
                     var bi: usize = 0;
                     while (bi < bl.len and bl[bi] == ' ') bi += 1;
                     if (block_indent == 0 and bi > 0) block_indent = bi;
@@ -188,10 +188,15 @@ fn parseYaml(allocator: Allocator, fm: *Frontmatter, yaml: []const u8) Allocator
 
             if (value_raw.len == 0) {
                 // This is a section header
-                current_section = key;
+                if (std.mem.eql(u8, key, "variables")) {
+                    try variables.parseVariablesSection(allocator, &fm.variables, raw_lines.items, &line_idx);
+                    current_section = null;
+                } else {
+                    current_section = key;
+                }
             } else {
                 // Scalar value
-                const value = stripYamlQuotes(value_raw);
+                const value = variables.stripQuotes(value_raw);
                 if (std.mem.eql(u8, key, "title")) {
                     if (fm.title) |old| allocator.free(old);
                     fm.title = try allocator.dupe(u8, value);
@@ -229,15 +234,6 @@ fn parseYaml(allocator: Allocator, fm: *Frontmatter, yaml: []const u8) Allocator
                     if (value_raw.len == 0) {
                         current_subsection = key;
                     }
-                } else if (std.mem.eql(u8, section, "defaults")) {
-                    const colon = std.mem.indexOfScalar(u8, trimmed, ':') orelse continue;
-                    const key = std.mem.trim(u8, trimmed[0..colon], " \t");
-                    const value_raw = std.mem.trim(u8, trimmed[colon + 1 ..], " \t");
-                    const value = stripYamlQuotes(value_raw);
-                    const owned_key = try allocator.dupe(u8, key);
-                    errdefer allocator.free(owned_key);
-                    const owned_value = try allocator.dupe(u8, value);
-                    try fm.defaults.put(owned_key, owned_value);
                 }
             }
         } else if (indent == 4) {
@@ -261,15 +257,4 @@ fn parseYaml(allocator: Allocator, fm: *Frontmatter, yaml: []const u8) Allocator
 
     fm.prerequisites.tools = try tools.toOwnedSlice(allocator);
     fm.prerequisites.env = try envs.toOwnedSlice(allocator);
-}
-
-fn stripYamlQuotes(s: []const u8) []const u8 {
-    if (s.len >= 2) {
-        if ((s[0] == '"' and s[s.len - 1] == '"') or
-            (s[0] == '\'' and s[s.len - 1] == '\''))
-        {
-            return s[1 .. s.len - 1];
-        }
-    }
-    return s;
 }

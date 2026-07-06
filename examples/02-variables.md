@@ -1,8 +1,10 @@
 ---
 description: Variables — inputs, outputs, and state
-defaults:
+variables:
   greeting: Hello
-  target: World
+  target:
+    description: Who to greet
+    default: World
 ---
 
 # Variables
@@ -14,9 +16,12 @@ The blocks below read and print state store values as they run.
 
 ---
 
-## Document defaults
+## Document variables
 
-The frontmatter `defaults` section pre-populates the state store before any block runs.
+The frontmatter `variables` section pre-populates the state store before any block runs.
+Each entry can be a plain scalar (`name: value`) or a nested form with an optional
+`description` alongside its `default` — the exact same shape as a code block's
+`variables` block below.
 This document started with:
 
 - `$MDJAM_GREETING` = `Hello`
@@ -24,7 +29,7 @@ This document started with:
 
 ```bash
 # ---
-# description: Reads the document-level defaults
+# description: Reads the document-level variables
 # ---
 echo "$MDJAM_GREETING, $MDJAM_TARGET!"
 ```
@@ -96,14 +101,14 @@ echo "APP_PORT : $MDJAM_APP_PORT"
 
 ## Interactive inputs
 
-Declare `inputs` to show an editable form above the code.
+Declare `variables` to show an editable form above the code.
 Fill the fields, then press **Enter** to run.
 
 ```bash
 # ---
 # id: greet
 # description: Personalised greeting
-# inputs:
+# variables:
 #   name:
 #     description: Your name
 #     default: Alice
@@ -121,13 +126,13 @@ esac
 
 ## Read-only input
 
-Mark an input `readonly: true` to lock it — useful for values set by a previous block.
+Mark a variable `readonly: true` to lock it — useful for values set by a previous block.
 
 ```bash
 # ---
 # id: stamp
 # description: Stamps a file with the build tag
-# inputs:
+# variables:
 #   build_tag:
 #     description: The build tag (set by the produce block)
 #     readonly: true

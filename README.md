@@ -123,6 +123,11 @@ setup: |
   export BASE_URL=https://staging.example.com
 teardown: |
   echo "Session ended"
+variables:
+  environment: staging
+  namespace:
+    description: Kubernetes namespace to deploy into
+    default: staging
 ---
 ```
 
@@ -133,12 +138,17 @@ teardown: |
 | `prerequisites.env` | Environment variables that must be set before the viewer starts |
 | `setup` | Bash script that runs once after prerequisites pass, before rendering |
 | `teardown` | Bash script that runs on quit (`Ctrl+C`) |
+| `variables` | Named values pre-populated into the state store before any block runs |
+| `variables.<name>` | Plain scalar (`name: value`) for a value with no description |
+| `variables.<name>.description` | Documents what the value is for |
+| `variables.<name>.default` | The value itself, when using the nested form |
+| `variables.<name>.readonly` | Parsed for parity with code-block variables; not currently enforced in the frontmatter editor |
 
 If any prerequisite is unmet, mdjam exits immediately and prints why to stderr — the viewer never opens. If `setup` or `teardown` exits non-zero, mdjam's own exit code reflects that (execution isn't blocked, and an error banner is shown at the top of the document for a failed `setup`). Setup/teardown stdout is only shown with `--verbose`; stderr is always shown, printed to the real terminal once mdjam exits.
 
 ### Executable code blocks
 
-Bash fences become interactive. A plain fence with no metadata is manually executable with no inputs or outputs:
+Bash fences become interactive. A plain fence with no metadata is manually executable with no variables or outputs:
 
 ````markdown
 ```bash
@@ -146,7 +156,7 @@ echo "hello"
 ```
 ````
 
-Add a YAML metadata comment block at the top of the fence body to declare inputs, outputs, dependencies, and auto-execution:
+Add a YAML metadata comment block at the top of the fence body to declare variables, outputs, dependencies, and auto-execution:
 
 ````markdown
 ```bash
@@ -154,7 +164,7 @@ Add a YAML metadata comment block at the top of the fence body to declare inputs
 # id: fetch-token
 # description: Retrieve auth token
 # auto: false
-# inputs:
+# variables:
 #   API_HOST:
 #     description: Base URL
 #     default: https://api.example.com
@@ -174,10 +184,10 @@ echo "::set-output name=TOKEN::$TOKEN"
 | `id` | string | Unique name for this block, used by `depends` in other blocks |
 | `description` | string | Label shown in the block header |
 | `auto` | boolean | Execute automatically on document load (default: `false`) |
-| `inputs` | map | Named values the block reads from the state store |
-| `inputs.<name>.description` | string | Shown above the input field |
-| `inputs.<name>.default` | string | Value used when no upstream block has set the key |
-| `inputs.<name>.readonly` | boolean | Display only — cannot be edited, must come from upstream (default: `false`) |
+| `variables` | map | Named values the block reads from the state store — same shape as frontmatter's `variables` |
+| `variables.<name>.description` | string | Shown above the field |
+| `variables.<name>.default` | string | Value used when no upstream block has set the key |
+| `variables.<name>.readonly` | boolean | Display only — cannot be edited, must come from upstream (default: `false`) |
 | `outputs` | string[] | Keys this block will export via `::set-output` |
 | `depends` | string[] | IDs of blocks that must succeed before this one runs |
 

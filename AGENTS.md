@@ -41,8 +41,9 @@ src/
   theme.zig        Color theme definitions
   parser/
     markdown.zig   GFM-subset markdown AST parser
-    frontmatter.zig YAML frontmatter parser (title, prerequisites, setup, teardown, defaults)
+    frontmatter.zig YAML frontmatter parser (title, prerequisites, setup, teardown, variables)
     fence_meta.zig  Code fence metadata parser (# ---...# --- YAML block)
+    variables.zig   Shared `variables:` block parser (name/description/default/readonly), used by both frontmatter.zig and fence_meta.zig
     dependency.zig  Dependency graph, topological sort
   engine/
     state_store.zig   Thread-safe key-value state store

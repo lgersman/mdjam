@@ -249,9 +249,9 @@ pub const App = struct {
 
         // Apply frontmatter defaults to state store
         if (self.fm) |fm| {
-            var it = fm.defaults.iterator();
+            var it = fm.variables.iterator();
             while (it.next()) |kv| {
-                self.store.set(kv.key_ptr.*, kv.value_ptr.*, null) catch {};
+                self.store.set(kv.key_ptr.*, kv.value_ptr.default orelse "", null) catch {};
             }
         }
 

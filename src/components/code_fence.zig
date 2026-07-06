@@ -4,6 +4,7 @@ const vxfw = vaxis.vxfw;
 const theme = @import("../theme.zig");
 const md = @import("../parser/markdown.zig");
 const fence_meta = @import("../parser/fence_meta.zig");
+const variables = @import("../parser/variables.zig");
 const block_runner = @import("../engine/block_runner.zig");
 const state_store = @import("../engine/state_store.zig");
 const highlighter = @import("highlighter.zig");
@@ -224,7 +225,7 @@ pub const CodeFenceWidget = struct {
     fn sortedInputNames(self: *const CodeFenceWidget, buf: *[16][]const u8) usize {
         const meta = self.block.metadata orelse return 0;
         var n: usize = 0;
-        var it = meta.inputs.iterator();
+        var it = meta.variables.iterator();
         while (it.next()) |entry| {
             if (n >= buf.len) break;
             buf[n] = entry.key_ptr.*;
@@ -242,7 +243,7 @@ pub const CodeFenceWidget = struct {
         var names_buf: [16][]const u8 = undefined;
         const n = self.sortedInputNames(&names_buf);
         for (names_buf[0..n]) |name| {
-            const def = meta.inputs.get(name).?;
+            const def = meta.variables.get(name).?;
             if (def.readonly) continue;
             return name;
         }
@@ -259,7 +260,7 @@ pub const CodeFenceWidget = struct {
         while (i > 0) {
             i -= 1;
             const name = names_buf[i];
-            const def = meta.inputs.get(name).?;
+            const def = meta.variables.get(name).?;
             if (def.readonly) continue;
             return name;
         }
@@ -275,7 +276,7 @@ pub const CodeFenceWidget = struct {
         var found_current = false;
         for (names_buf[0..n]) |name| {
             if (found_current) {
-                const def = meta.inputs.get(name).?;
+                const def = meta.variables.get(name).?;
                 if (def.readonly) continue;
                 return name;
             }
@@ -293,7 +294,7 @@ pub const CodeFenceWidget = struct {
         var prev_editable: ?[]const u8 = null;
         for (names_buf[0..n]) |name| {
             if (std.mem.eql(u8, name, current)) return prev_editable;
-            const def = meta.inputs.get(name).?;
+            const def = meta.variables.get(name).?;
             if (!def.readonly) prev_editable = name;
         }
         return null;
@@ -339,7 +340,7 @@ pub const CodeFenceWidget = struct {
         self: *const CodeFenceWidget,
         arena: Allocator,
         name: []const u8,
-        def: fence_meta.InputDef,
+        def: variables.VariableDef,
     ) ?[]const u8 {
         if (self.store.getCopy(name, arena) catch null) |v| return v;
         if (self.input_values.get(name)) |v| return v;
@@ -350,7 +351,7 @@ pub const CodeFenceWidget = struct {
     /// declared default — same precedence as `resolvedInputValueForDisplay`)
     /// into `hasher`. Used by DocumentView.autoSignature to detect changed
     /// parameters without needing to know that precedence itself.
-    pub fn hashInputValue(self: *const CodeFenceWidget, hasher: *std.hash.Wyhash, name: []const u8, def: fence_meta.InputDef) void {
+    pub fn hashInputValue(self: *const CodeFenceWidget, hasher: *std.hash.Wyhash, name: []const u8, def: variables.VariableDef) void {
         if (self.store.getCopy(name, self.allocator) catch null) |v| {
             defer self.allocator.free(v);
             hasher.update(v);
@@ -375,7 +376,7 @@ pub const CodeFenceWidget = struct {
         self.input_field.clearAndFree();
         self.input_field.style = .{ .reverse = true };
         const meta = self.block.metadata orelse return;
-        const def = meta.inputs.get(name) orelse return;
+        const def = meta.variables.get(name) orelse return;
         // Same precedence as resolvedInputValueForDisplay: store (upstream/
         // shared-default edit) > local edit > declared default. Without the
         // store check, re-entering edit mode on an input that another block
@@ -402,7 +403,7 @@ pub const CodeFenceWidget = struct {
     /// otherwise.
     fn resolveInputsBeforeExecution(self: *CodeFenceWidget) void {
         const meta = self.block.metadata orelse return;
-        var it = meta.inputs.iterator();
+        var it = meta.variables.iterator();
         while (it.next()) |entry| {
             const name = entry.key_ptr.*;
             const def = entry.value_ptr.*;
@@ -618,12 +619,12 @@ pub const CodeFenceWidget = struct {
             }
 
             // Inputs: always shown (not just verbose) since they're interactive.
-            if (meta.inputs.count() > 0) {
+            if (meta.variables.count() > 0) {
                 var names_buf: [16][]const u8 = undefined;
                 const n = self.sortedInputNames(&names_buf);
 
                 for (names_buf[0..n]) |name| {
-                    const def = meta.inputs.get(name).?;
+                    const def = meta.variables.get(name).?;
                     surface.writeCell(0, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
 
                     if (self.editing_input != null and std.mem.eql(u8, self.editing_input.?, name)) {
@@ -633,7 +634,7 @@ pub const CodeFenceWidget = struct {
                         writeStr(surface, 2, row, label, meta_style);
                         const field_col: u16 = 2 + @as(u16, @intCast(label.len));
                         if (width > field_col + 1) {
-                            const field_width = width - field_col - 1;
+                            const field_width = descriptionAwareFieldWidth(width - field_col - 1, def.description);
                             // Render the field's current text ourselves (heap-cached) rather
                             // than blitting TextField.draw()'s surface, which is backed by
                             // ctx.arena and would hit the same stale-diff issue as above.
@@ -654,6 +655,10 @@ pub const CodeFenceWidget = struct {
                             while (col < field_width) : (col += 1) {
                                 surface.writeCell(field_col + col, row, .{ .char = .{ .grapheme = " ", .width = 1 }, .style = field_style });
                             }
+                            if (def.description) |desc| {
+                                const desc_style: vaxis.Style = .{ .fg = .{ .index = 8 }, .italic = true };
+                                writeStrRightAligned(surface, row, width -| 1, field_col + field_width, desc, desc_style);
+                            }
                             // Ask the terminal to show its own (native, blinking)
                             // cursor at the insertion point, in this surface's own
                             // local coordinates — DocumentView translates it into
@@ -670,6 +675,11 @@ pub const CodeFenceWidget = struct {
                         const hint: []const u8 = if (def.readonly) " (readonly)" else "";
                         const line = self.cachedLine(name, "# {s}: {s}{s}", .{ name, value orelse "", hint });
                         writeStr(surface, 2, row, line, meta_style);
+                        if (def.description) |desc| {
+                            const desc_style: vaxis.Style = .{ .fg = .{ .index = 8 }, .italic = true };
+                            const min_col: u16 = 2 + @as(u16, @intCast(line.len));
+                            writeStrRightAligned(surface, row, width -| 1, min_col, desc, desc_style);
+                        }
                     }
 
                     if (width >= 2) surface.writeCell(width - 1, row, .{ .char = .{ .grapheme = "│", .width = 1 }, .style = border_style });
@@ -735,7 +745,7 @@ fn metaLineCount(self: *const CodeFenceWidget) u16 {
         if (meta.outputs.len > 0) n += 1;
     }
     // Inputs are always shown (not just in verbose mode) since they're interactive.
-    n += @intCast(meta.inputs.count());
+    n += @intCast(meta.variables.count());
     return n;
 }
 
@@ -807,4 +817,46 @@ fn writeStr(surface: vxfw.Surface, col: u16, row: u16, s: []const u8, style: vax
         });
         c += 1;
     }
+}
+
+/// Writes `s` right-aligned in `row`, ending just before `right_edge`
+/// (exclusive) and never starting before `min_col`, leaving at least one
+/// column of gap. Truncates from the end when there isn't room for all of
+/// `s`; renders nothing when there isn't room for even one column plus gap.
+fn writeStrRightAligned(surface: vxfw.Surface, row: u16, right_edge: u16, min_col: u16, s: []const u8, style: vaxis.Style) void {
+    const avail = (right_edge -| min_col) -| 1;
+    if (avail == 0) return;
+
+    var len: u16 = 0;
+    var it = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
+    while (it.nextCodepointSlice()) |_| len += 1;
+    const shown: u16 = @min(len, avail);
+    if (shown == 0) return;
+
+    const start_col = right_edge - shown;
+    var it2 = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
+    var written: u16 = 0;
+    while (it2.nextCodepointSlice()) |g| {
+        if (written >= shown) break;
+        surface.writeCell(start_col + written, row, .{ .char = .{ .grapheme = g, .width = 1 }, .style = style });
+        written += 1;
+    }
+}
+
+/// Shrinks an editable field's width to leave room for `description`
+/// (rendered right-aligned via `writeStrRightAligned`) so it stays visible
+/// while the field is focused, unless that would leave less than
+/// `min_field_width` columns to actually edit in — in which case the field
+/// keeps the full width and the description is dropped for this frame.
+fn descriptionAwareFieldWidth(full_width: u16, description: ?[]const u8) u16 {
+    const desc = description orelse return full_width;
+    var desc_len: u16 = 0;
+    var it = std.unicode.Utf8Iterator{ .bytes = desc, .i = 0 };
+    while (it.nextCodepointSlice()) |_| desc_len += 1;
+    if (desc_len == 0) return full_width;
+
+    const reserve = desc_len + 1; // +1 gap column before the description
+    const min_field_width: u16 = 4;
+    if (full_width > reserve + min_field_width) return full_width - reserve;
+    return full_width;
 }

@@ -6,6 +6,34 @@ const c = @cImport({
 
 const Allocator = std.mem.Allocator;
 
+/// Prepended to every block script. Snapshots currently-exported variable
+/// names/values, then installs an EXIT trap (fires on normal completion,
+/// an explicit `exit`, or a terminating signal) that re-scans exported
+/// variables and reports any that are new or changed via the same
+/// `::set-output` convention the engine already parses from stdout — so
+/// plain `export FOO=bar` inside a block is captured with no extra parsing
+/// or display filtering required elsewhere.
+const export_capture_prefix =
+    \\__mdjam_before_vars=()
+    \\for __mdjam_n in $(compgen -e); do
+    \\  __mdjam_before_vars+=("$__mdjam_n=${!__mdjam_n}")
+    \\done
+    \\trap '
+    \\for __mdjam_n in $(compgen -e); do
+    \\  case "$__mdjam_n" in __mdjam_*) continue ;; esac
+    \\  __mdjam_v="${!__mdjam_n}"
+    \\  __mdjam_found=0
+    \\  for __mdjam_b in "${__mdjam_before_vars[@]}"; do
+    \\    if [ "$__mdjam_b" = "$__mdjam_n=$__mdjam_v" ]; then __mdjam_found=1; break; fi
+    \\  done
+    \\  if [ "$__mdjam_found" -eq 0 ]; then
+    \\    printf "::set-output name=%s::%s\n" "$__mdjam_n" "$__mdjam_v"
+    \\  fi
+    \\done
+    \\' EXIT
+    \\
+;
+
 pub const RunStatus = enum {
     idle,
     running,
@@ -129,7 +157,10 @@ fn runSync(runner: *Runner, opts: RunOptions) void {
         env_map.put(key_buf, kv.value) catch return;
     }
 
-    const argv: []const []const u8 = &.{ "/bin/bash", "-c", opts.script };
+    const wrapped_script = std.fmt.allocPrint(opts.allocator, "{s}{s}", .{ export_capture_prefix, opts.script }) catch return;
+    defer opts.allocator.free(wrapped_script);
+
+    const argv: []const []const u8 = &.{ "/bin/bash", "-c", wrapped_script };
 
     var child = std.process.spawn(opts.io, .{
         .argv = argv,

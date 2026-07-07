@@ -2,6 +2,8 @@
 
 A terminal markdown viewer where bash code blocks can be executed inline. Scripts run, their output appears directly below the fence, values flow between blocks, and the whole thing stays in your terminal.
 
+[![asciicast](https://asciinema.org/a/TW3CEo7TEpXVXoQ4.svg)](https://asciinema.org/a/TW3CEo7TEpXVXoQ4)
+
 Implemented in [Zig](https://ziglang.org) — ships as a single statically-linked binary with no runtime dependencies.
 
 ## Prerequisites

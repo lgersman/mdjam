@@ -1,6 +1,7 @@
 {
   "attribution": {
-    "commit": ""
+    "commit": "",
+    "pr": ""
   },
   "enabledPlugins": {
     "ponytail@ponytail": true
